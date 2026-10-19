@@ -189,12 +189,12 @@ Traditional personal finance apps only track what you spent *after* you've alrea
 
 | Component | Technology | Version / Specification | Role |
 | :--- | :--- | :--- | :--- |
-| **Frontend Framework** | [React](https://react.dev/) | `^19.3.0` | Declarative UI & Component Architecture |
+| **Frontend Framework** | [React](https://react.dev/) | `^19.3.1` | Declarative UI & Component Architecture |
 | **Type Safety** | [TypeScript](https://www.typescriptlang.org/) | `^7.0.2` | Strict compile-time validation & interfaces |
 | **Build Tooling** | [Vite](https://vite.dev/) | `^8.3.4` | Ultra-fast HMR, bundling, and asset pipeline |
 | **Styling Engine** | [Tailwind CSS v4](https://tailwindcss.com/) | `^4.3.3` (`@tailwindcss/vite`) | Utility-first responsive design & dark mode |
-| **Iconography** | [Lucide React](https://lucide.dev/) | `^1.57.0` | Accessible fintech and operational icon library |
-| **Backend & Database** | [Supabase](https://supabase.com/) | `@supabase/supabase-js: ^2.117.3` | PostgreSQL, Auth, Row-Level Security (RLS) |
+| **Iconography** | [Lucide React](https://lucide.dev/) | `^1.59.0` | Accessible fintech and operational icon library |
+| **Backend & Database** | [Supabase](https://supabase.com/) | `@supabase/supabase-js: ^2.118.0` | PostgreSQL, Auth, Row-Level Security (RLS) |
 | **AI Intelligence** | [Google Gemini](https://ai.google.dev/) | 2.0 / 2.5 Flash | Natural language expense parsing & categorization |
 | **Hardware Sentinel** | Web Crypto UUID | Hardware Fingerprint | 1-Active-Device lock & telemetry isolation |
 | **Geolocation Engine** | HTML5 Geolocation + Haversine | $O(1)$ Math Calculations | Speed tracking, traffic hysteresis, geofences |
