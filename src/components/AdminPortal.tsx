@@ -1135,7 +1135,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <ul className="space-y-1.5 text-slate-400 list-disc list-inside">
                     <li>Purge all 13 PostgreSQL database tables across entire platform (preserving system taxonomy defaults)</li>
                     <li><strong className="text-emerald-400 font-semibold">Preserve admin and authentication accounts</strong> in <code className="text-purple-300 font-mono">auth.users</code></li>
-                    <li>Wipe device-scoped mobility caches, mock coordinates, and streak history</li>
+                    <li>Wipe device-scoped mobility caches and mock coordinates</li>
                     <li>Ensure every member starting account starts strictly at balance <code className="text-emerald-400 font-mono">0.00</code></li>
                     <li>Eliminate all hallucinated sample data injection from future loads</li>
                   </ul>

@@ -19,7 +19,6 @@ import {
   ShieldCheck,
   Smartphone,
   TrendingUp,
-  Flame,
   AlertCircle,
   Navigation,
   Car,
@@ -68,8 +67,8 @@ const SECTIONS: { id: GuideSection; label: string; icon: React.ReactNode; desc: 
     id: 'tasks',
     label: 'Daily Tasks & Bills',
     icon: <CheckSquare className="w-4 h-4 text-teal-400" />,
-    desc: 'Operations, bills, streaks',
-    keywords: 'tasks bills payable receivable due dates operations habits no-spend streak checkoff',
+    desc: 'Operations & bills',
+    keywords: 'tasks bills payable receivable due dates operations checkoff milestones',
   },
   {
     id: 'timeline',
@@ -442,16 +441,6 @@ export const HelpGuide: React.FC<HelpGuideProps> = ({ onNavigateTab }) => {
                       </p>
                     </div>
                   </div>
-                </div>
-
-                <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Flame className="w-4 h-4 text-amber-400" />
-                    <h3 className="text-sm font-bold text-white">Daily &ldquo;No-Spend&rdquo; Streak Challenge</h3>
-                  </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Build financial discipline and mindful spending habits. Each day you make zero non-essential discretionary purchases, check in with the streak button on the Tasks tab to build up your consecutive streak!
-                  </p>
                 </div>
               </div>
 
@@ -929,7 +918,7 @@ export const HelpGuide: React.FC<HelpGuideProps> = ({ onNavigateTab }) => {
                     <span>How does the Admin Full Database Refresh work, and why is sample data removed?</span>
                   </h4>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Administrators can navigate to the <strong>Executive Admin Console &rarr; Database &amp; Schema</strong> tab (or click <strong>&ldquo;Fully Refresh DB&rdquo;</strong> in the admin header) to completely wipe all 11 database tables and purge all device-scoped local storage caches. Furthermore, Apex LifeOS operates on a strict zero-hallucination policy: all automatic sample data injection (mock places, fabricated commute trips, fake users, and inflated streaks) has been removed. Empty database states reflect actual clean zero records.
+                    Administrators can navigate to the <strong>Executive Admin Console &rarr; Database &amp; Schema</strong> tab (or click <strong>&ldquo;Fully Refresh DB&rdquo;</strong> in the admin header) to completely wipe all 11 database tables and purge all device-scoped local storage caches. Furthermore, Apex LifeOS operates on a strict zero-hallucination policy: all automatic sample data injection (mock places, fabricated commute trips, and fake users) has been removed. Empty database states reflect actual clean zero records.
                   </p>
                 </div>
               </div>

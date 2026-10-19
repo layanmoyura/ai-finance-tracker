@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import type { Task, Account, Category, TaskPriority, FinancialTaskType } from '../types';
 import { supabase } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
@@ -13,7 +13,6 @@ import {
   Tag,
   ArrowUpRight,
   ArrowDownLeft,
-  Flame,
   Check,
   X,
   Loader2,
@@ -59,42 +58,6 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
   const [categoryId, setCategoryId] = useState<string>('');
   const [accountId, setAccountId] = useState<string>('');
   const [recurrenceRule, setRecurrenceRule] = useState<string>('none');
-
-  // Daily Streak state (synced with Supabase)
-  const [noSpendStreak, setNoSpendStreak] = useState<number>(0);
-  const [markedTodayNoSpend, setMarkedTodayNoSpend] = useState<boolean>(false);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      const today = new Date().toISOString().split('T')[0];
-      if (user?.user_metadata) {
-        const streak = user.user_metadata.no_spend_streak ?? parseInt(localStorage.getItem('apex_no_spend_streak') || '0', 10);
-        const marked = (user.user_metadata.marked_today === today) || (localStorage.getItem('apex_marked_today') === today);
-        setNoSpendStreak(streak);
-        setMarkedTodayNoSpend(marked);
-      }
-    });
-  }, []);
-
-  const handleToggleNoSpendToday = () => {
-    const today = new Date().toISOString().split('T')[0];
-    if (markedTodayNoSpend) {
-      setMarkedTodayNoSpend(false);
-      localStorage.removeItem('apex_marked_today');
-      supabase.auth.updateUser({
-        data: { marked_today: null },
-      }).catch(() => {});
-    } else {
-      setMarkedTodayNoSpend(true);
-      const nextStreak = noSpendStreak + 1;
-      setNoSpendStreak(nextStreak);
-      localStorage.setItem('apex_marked_today', today);
-      localStorage.setItem('apex_no_spend_streak', String(nextStreak));
-      supabase.auth.updateUser({
-        data: { no_spend_streak: nextStreak, marked_today: today },
-      }).catch(() => {});
-    }
-  };
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -242,13 +205,13 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
   const [isResetting, setIsResetting] = useState(false);
 
   const handleResetTasks = async () => {
-    if (tasks.length === 0 && noSpendStreak === 0) {
-      alert('No tasks or streak to reset.');
+    if (tasks.length === 0) {
+      alert('No tasks to reset.');
       return;
     }
     if (
       !window.confirm(
-        `Are you sure you want to reset and delete all ${tasks.length} tasks and reset your daily check-in streak? This action cannot be undone.`
+        `Are you sure you want to reset and delete all ${tasks.length} tasks? This action cannot be undone.`
       )
     ) {
       return;
@@ -260,8 +223,6 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
       if (error) throw error;
       localStorage.removeItem('apex_no_spend_streak');
       localStorage.removeItem('apex_marked_today');
-      setNoSpendStreak(0);
-      setMarkedTodayNoSpend(false);
       onTasksUpdated();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to reset tasks');
@@ -289,7 +250,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Operations Header & Quick Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Tasks</p>
@@ -325,30 +286,6 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
             <ArrowUpRight className="w-5 h-5" />
           </div>
         </div>
-
-        {/* Daily Financial Habit Widget */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <Flame className="w-4 h-4 text-amber-400 fill-amber-400" />
-              <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider">No-Spend Streak</p>
-            </div>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-bold text-white">{noSpendStreak}</span>
-              <span className="text-xs text-slate-400">days</span>
-            </div>
-          </div>
-          <button
-            onClick={handleToggleNoSpendToday}
-            className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition cursor-pointer ${
-              markedTodayNoSpend
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-            }`}
-          >
-            {markedTodayNoSpend ? 'Done Today ✓' : '+ Check-in'}
-          </button>
-        </div>
       </div>
 
       {/* Main Operations Card */}
@@ -369,8 +306,8 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={handleResetTasks}
-              disabled={isResetting || (tasks.length === 0 && noSpendStreak === 0)}
-              title="Reset and clear all tasks and daily check-in streak"
+              disabled={isResetting || tasks.length === 0}
+              title="Reset and clear all tasks"
               className="text-xs font-semibold px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/25 flex items-center gap-1.5 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               {isResetting ? (
