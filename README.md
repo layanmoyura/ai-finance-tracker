@@ -86,7 +86,6 @@ Traditional personal finance apps only track what you spent *after* you've alrea
 * Connect daily checklists directly to your balance sheet:
   * **Payables (Bills to Pay)**: Checking off *"Pay WiFi Bill"* deducts the bill from checking.
   * **Receivables (Income Expected)**: Completing *"Deliver Freelance Milestone"* logs the deposit.
-* **Daily "No-Spend" Streak Challenge**: Gamified habit tracker to reinforce mindful spending, synced directly with Supabase.
 
 ### 5. 📦 Personal Asset & Inventory Vault
 * Catalog high-value possessions (electronics, vehicles, tools, collectibles).
@@ -124,7 +123,7 @@ Traditional personal finance apps only track what you spent *after* you've alrea
   * **Reset Transactions**: Deletes all recorded transactions and resets ledger history.
   * **Reset Accounts**: Resets all balances to zero and restores a clean default Checking Account (`0.00`).
   * **Reset Budgets**: Clears all monthly category limits for the active period.
-  * **Reset Tasks**: Clears to-dos/bills and resets your daily no-spend check-in streak.
+  * **Reset Tasks**: Clears to-dos/bills and restores a clean operations board.
   * **Reset Timeline**: Clears recorded transit trips, timeline events, and resets device telemetry.
   * **Reset Assets**: Clears all registered fixed assets and warranty logs in the vault.
   * **Reset Subscriptions**: Clears all recurring subscription monitors and burn calculations.
@@ -142,7 +141,7 @@ Traditional personal finance apps only track what you spent *after* you've alrea
 * **Soft-Keyboard Overflow Defense**: All modals implement `max-h-[90vh] overflow-y-auto` to prevent buttons from being clipped by virtual keyboards on iOS and Android.
 
 ### 13. ☁️ Cloud-First Direct Supabase Synchronization
-* All saved places, mobility timeline events, daily statistics, tasks, and streaks are persisted directly in Supabase PostgreSQL tables.
+* All saved places, mobility timeline events, daily statistics, and tasks are persisted directly in Supabase PostgreSQL tables.
 * Stale `localStorage` caching has been eliminated in favor of real-time database queries, ensuring consistent state across reloads and multi-device session migrations.
 
 ### 14. 💵 In-Hand Cash & ATM Vault

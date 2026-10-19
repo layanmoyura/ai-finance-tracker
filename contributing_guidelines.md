@@ -55,7 +55,7 @@ When contributing to Apex LifeOS, you must strictly follow these platform invari
 * The administrative purge procedure must guarantee that user authentication accounts are preserved while all transactional, spatial, and telemetry data are wiped clean.
 
 ### 3. Cloud-First Supabase Synchronization
-* All saved places, mobility timeline events, daily transit statistics, and streaks must be persisted directly to Supabase tables.
+* All saved places, mobility timeline events, daily transit statistics, and tasks must be persisted directly to Supabase tables.
 * Do not rely on browser `localStorage` as the authoritative source of truth. Use `localStorage` only for non-critical transient caching or device identification.
 
 ### 4. Two-Row Navigation Standards
