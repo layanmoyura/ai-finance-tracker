@@ -18,6 +18,12 @@
 </p>
 
 <p align="center">
+  <a href="docs/Apex_LifeOS_Technical_Documentation.pdf"><strong>📄 Technical Documentation (PDF)</strong></a> •
+  <a href="https://layanpro123456.github.io/ai-finance-tracker/tutorial.html"><strong>🎬 Beginner Video Tutorial</strong></a> •
+  <a href="docs/TUTORIAL_VIDEO_SCRIPT.md"><strong>📝 Video Production Script</strong></a>
+</p>
+
+<p align="center">
   <a href="#key-features">Features</a> •
   <a href="#navigation--ui-architecture">Navigation & UI</a> •
   <a href="#security--administrative-governance">Admin & Security</a> •

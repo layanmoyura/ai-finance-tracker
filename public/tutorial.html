@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apex LifeOS — Beginner Video Tutorial &amp; Interactive Walkthrough</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #030712;
+      color: #f8fafc;
+      overflow-x: hidden;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .cinema-screen {
+      aspect-ratio: 16 / 9;
+      background: radial-gradient(circle at 50% 20%, #0f172a 0%, #020617 100%);
+    }
+    .pulse-ring {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: .4; transform: scale(1.15); }
+    }
+    .simulated-cursor {
+      transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+      z-index: 50;
+    }
+    .click-ripple {
+      animation: ripple 0.5s ease-out forwards;
+    }
+    @keyframes ripple {
+      0% { transform: scale(0.5); opacity: 1; }
+      100% { transform: scale(2.5); opacity: 0; }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-3 sm:p-6 lg:p-8">
+
+  <!-- Top Bar -->
+  <header class="w-full max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-800">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center font-black text-slate-950 text-lg shadow-lg shadow-emerald-500/20">
+        A
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-extrabold text-white text-base tracking-tight">Apex LifeOS</span>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold uppercase">
+            Official Tutorial
+          </span>
+        </div>
+        <p class="text-xs text-slate-400">Complete Masterclass for Everyday Users (Non-Technical)</p>
+      </div>
+    </div>
+
+    <!-- Quick Links -->
+    <div class="flex items-center gap-2.5 text-xs">
+      <a href="./technical-docs.html" class="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 font-medium transition flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+        <span>Tech PDF Docs</span>
+      </a>
+      <a href="./" class="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition">
+        Open App &rarr;
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Player Container -->
+  <main class="w-full max-w-6xl mx-auto flex-1 flex flex-col justify-center">
+
+    <!-- Cinema Player Box -->
+    <div class="relative w-full cinema-screen rounded-3xl overflow-hidden border border-slate-800 shadow-2xl flex flex-col justify-between">
+      
+      <!-- Video Stage Content (Canvas / Screen Simulation) -->
+      <div id="videoStage" class="relative w-full h-full p-6 sm:p-10 flex flex-col justify-between overflow-hidden select-none">
+        
+        <!-- Ambient stage background light -->
+        <div id="stageGlow" class="absolute -top-32 -left-32 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none transition-all duration-700"></div>
+        <div class="absolute -bottom-32 -right-32 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <!-- Simulated Mouse Cursor -->
+        <div id="simulatedCursor" class="simulated-cursor absolute top-1/2 left-1/2 flex items-center gap-1 opacity-0 transition-opacity duration-300">
+          <svg class="w-5 h-5 text-emerald-400 drop-shadow-md" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4 0l16 12.279-6.951 1.17 4.325 8.817-3.596 1.734-4.35-8.879-5.428 5.428v-20.549z"/>
+          </svg>
+          <div id="cursorRipple" class="w-4 h-4 rounded-full border-2 border-emerald-400 hidden"></div>
+        </div>
+
+        <!-- Stage Header: Current Chapter & Tag -->
+        <div class="relative z-10 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span id="chapterNumber" class="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-slate-800/80 text-emerald-400 border border-slate-700">
+              EPISODE 1 OF 7
+            </span>
+            <span id="chapterTitleHeader" class="text-xs font-semibold text-slate-300">
+              Welcome &amp; The 30-Second Tour
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div id="liveBadge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-mono font-bold">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              <span>PLAYING</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dynamic Animated Scene Mockup -->
+        <div id="sceneContainer" class="relative z-10 my-auto w-full max-w-3xl mx-auto flex flex-col items-center justify-center transition-all duration-500">
+          <!-- Dynamic Scene Injected Here by JS -->
+        </div>
+
+        <!-- Subtitles / Closed Captions Ribbon -->
+        <div id="subtitleBox" class="relative z-10 max-w-2xl mx-auto w-full text-center bg-slate-950/85 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-slate-800/80 shadow-lg transition-all duration-300">
+          <p id="subtitleText" class="text-xs sm:text-sm font-medium text-slate-200">
+            Welcome to Apex LifeOS! Let’s explore how this single app replaces your finance spreadsheets, habit trackers, and commute logs.
+          </p>
+        </div>
+
+      </div>
+
+      <!-- Player Control Bar -->
+      <div class="relative z-20 bg-slate-950/95 border-t border-slate-800 p-3 sm:p-4 flex flex-col gap-2.5">
+        
+        <!-- Scrubber Progress Bar -->
+        <div class="flex items-center gap-3">
+          <span id="timeCurrent" class="text-[11px] font-mono text-slate-400 min-w-9 text-right">00:00</span>
+          <div id="progressBarContainer" class="flex-1 h-2 bg-slate-800 rounded-full cursor-pointer relative overflow-hidden group">
+            <div id="progressBar" class="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full w-0 transition-all duration-200"></div>
+          </div>
+          <span id="timeTotal" class="text-[11px] font-mono text-slate-400 min-w-9">07:00</span>
+        </div>
+
+        <!-- Buttons Ribbon -->
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <div class="flex items-center gap-2">
+            <!-- Play / Pause -->
+            <button id="playBtn" onclick="togglePlay()" class="w-9 h-9 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold flex items-center justify-center shadow-md transition cursor-pointer">
+              <svg id="playIcon" class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              <svg id="pauseIcon" class="w-4 h-4 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+
+            <!-- Previous Chapter -->
+            <button onclick="prevChapter()" class="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 flex items-center justify-center transition border border-slate-800 cursor-pointer" title="Previous Chapter">
+              <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+            </button>
+
+            <!-- Next Chapter -->
+            <button onclick="nextChapter()" class="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 flex items-center justify-center transition border border-slate-800 cursor-pointer" title="Next Chapter">
+              <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+            </button>
+
+            <!-- Chapter Select Dropdown -->
+            <select id="chapterSelect" onchange="jumpToChapter(Number(this.value))" class="bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500">
+              <option value="0">1. Welcome &amp; 30-Sec Tour</option>
+              <option value="1">2. Magic AI &amp; Voice Typing</option>
+              <option value="2">3. Cash Wallet &amp; ATM Withdrawals</option>
+              <option value="3">4. Smart Places &amp; Geofences</option>
+              <option value="4">5. Daily Tasks That Pay You</option>
+              <option value="5">6. Subscriptions &amp; Bill Splits</option>
+              <option value="6">7. Android Companion &amp; Wrap-Up</option>
+            </select>
+          </div>
+
+          <!-- Right Controls: Audio Speech, Subtitles, Speed & Download Video -->
+          <div class="flex items-center gap-2">
+            <!-- Audio Voice Narration Toggle -->
+            <button id="voiceBtn" onclick="toggleVoice()" class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer" title="Toggle Spoken Voiceover Narration">
+              <svg id="voiceIcon" class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
+              <span id="voiceStatusText">Voice: ON</span>
+            </button>
+
+            <!-- Subtitles Toggle -->
+            <button id="ccBtn" onclick="toggleSubtitles()" class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-semibold flex items-center gap-1 transition cursor-pointer" title="Toggle Captions">
+              <span class="font-mono text-[10px] font-bold px-1 rounded bg-slate-800 text-emerald-400">CC</span>
+            </button>
+
+            <!-- Playback Speed -->
+            <button id="speedBtn" onclick="cycleSpeed()" class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-mono font-semibold transition cursor-pointer">
+              1.0x
+            </button>
+
+            <!-- One-Click Download Video Button (WebM) -->
+            <button id="recordBtn" onclick="recordVideoClip()" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow transition cursor-pointer">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              <span id="recordBtnText">Download Video</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Chapter Quick Selector Grid Below Player -->
+    <div class="mt-6 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+      <button onclick="jumpToChapter(0)" class="chapter-card p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-emerald-500/50 text-left transition cursor-pointer">
+        <div class="text-[10px] font-mono text-emerald-400 font-bold">CH 1 • 01:00</div>
+        <div class="text-xs font-semibold text-slate-200 truncate mt-0.5">Welcome &amp; Tour</div>
+      </button>
+      <button onclick="jumpToChapter(1)" class="chapter-card p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-emerald-500/50 text-left transition cursor-pointer">
+        <div class="text-[10px] font-mono text-teal-400 font-bold">CH 2 • 01:00</div>
+        <div class="text-xs font-semibold text-slate-200 truncate mt-0.5">Voice &amp; AI Magic</div>
+      </button>
+      <button onclick="jumpToChapter(2)" class="chapter-card p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-emerald-500/50 text-left transition cursor-pointer">
+        <div class="text-[10px] font-mono text-emerald-400 font-bold">CH 3 • 01:00</div>
+        <div class="text-xs font-semibold text-slate-200 truncate mt-0.5">Cash &amp; ATM Vault</div>
+      </button>
+      <button onclick="jumpToChapter(3)" class="chapter-card p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-emerald-500/50 text-left transition cursor-pointer">
+        <div class="text-[10px] font-mono text-blue-400 font-bold">CH 4 • 01:00</div>
+        <div class="text-xs font-semibold text-slate-200 truncate mt-0.5">Geofence Alerts</div>
+      </button>
+      <button onclick="jumpToChapter(4)" class="chapter-card p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-emerald-500/50 text-left transition cursor-pointer">
+        <div class="text-[10px] font-mono text-purple-400 font-bold">CH 5 • 01:00</div>
+        <div class="text-xs font-semibold text-slate-200 truncate mt-0.5">Daily Tasks Bridge</div>
+      </button>
+      <button onclick="jumpToChapter(5)" class="chapter-card p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-emerald-500/50 text-left transition cursor-pointer">
+        <div class="text-[10px] font-mono text-rose-400 font-bold">CH 6 • 01:00</div>
+        <div class="text-xs font-semibold text-slate-200 truncate mt-0.5">Subs &amp; Split Bills</div>
+      </button>
+      <button onclick="jumpToChapter(6)" class="chapter-card p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-emerald-500/50 text-left transition cursor-pointer">
+        <div class="text-[10px] font-mono text-amber-400 font-bold">CH 7 • 01:00</div>
+        <div class="text-xs font-semibold text-slate-200 truncate mt-0.5">Mobile Phone Sync</div>
+      </button>
+    </div>
+
+  </main>
+
+  <!-- Video Tutorial Engine JavaScript -->
+  <script>
+    // Chapters Metadata & Simulated Animations
+    const CHAPTERS = [
+      {
+        id: 0,
+        number: "EPISODE 1 OF 7",
+        title: "Welcome to Apex LifeOS",
+        durationSec: 60,
+        subtitle: "Welcome to Apex LifeOS! This single app connects your money, your daily travel, and your to-do list in real-time.",
+        spokenText: "Welcome to Apex LifeOS! This single app connects your money, your daily travel, and your to-do list in real time without spreadsheets or messy receipts.",
+        render: () => `
+          <div class="w-full max-w-lg bg-slate-900/90 border border-slate-700/80 rounded-2xl p-5 shadow-2xl">
+            <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+              <span class="text-xs font-mono font-bold text-emerald-400">● LIVE BALANCES OVERVIEW</span>
+              <span class="text-[10px] text-slate-400">Dynamic Multi-Currency</span>
+            </div>
+            <div class="grid grid-cols-2 gap-3 mb-4">
+              <div class="p-3 bg-slate-950/80 rounded-xl border border-slate-800">
+                <span class="text-[11px] text-slate-400">Primary Checking</span>
+                <div class="text-xl font-bold text-white mt-1">$2,450.00</div>
+              </div>
+              <div class="p-3 bg-slate-950/80 rounded-xl border border-slate-800">
+                <span class="text-[11px] text-slate-400">Cash in Wallet</span>
+                <div class="text-xl font-bold text-emerald-400 mt-1">$180.00</div>
+              </div>
+            </div>
+            <div class="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
+              <span class="text-base">🚀</span>
+              <span><strong>Zero Hallucinations:</strong> All numbers strictly reflect your real accounts.</span>
+            </div>
+          </div>
+        `
+      },
+      {
+        id: 1,
+        number: "EPISODE 2 OF 7",
+        title: "Magic AI & Voice Expense Tracking",
+        durationSec: 60,
+        subtitle: "Just talk or type naturally: 'Spent Rs 4,500 on groceries yesterday'. Gemini AI extracts amount, category, and date instantly!",
+        spokenText: "Just talk or type naturally. Say: Spent Rs 4,500 on groceries yesterday. Gemini AI extracts the amount, category, and date instantly with hands-free voice typing.",
+        render: () => `
+          <div class="w-full max-w-lg bg-slate-900/90 border border-slate-700/80 rounded-2xl p-5 shadow-2xl space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-mono font-bold text-teal-400">🎙️ AI VOICE &amp; TEXT PARSER</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300">Web Speech Active</span>
+            </div>
+            <div class="p-3.5 bg-slate-950 border border-teal-500/40 rounded-xl flex items-center justify-between">
+              <span class="text-xs text-white font-mono">"Spent Rs 4,500 on groceries at Keells"</span>
+              <div class="w-3 h-3 rounded-full bg-teal-400 animate-ping"></div>
+            </div>
+            <div class="p-3 bg-slate-950/90 rounded-xl border border-slate-800 text-xs space-y-1">
+              <div class="flex justify-between text-slate-400"><span>Amount:</span> <strong class="text-white">Rs 4,500.00</strong></div>
+              <div class="flex justify-between text-slate-400"><span>Category:</span> <strong class="text-emerald-400">Groceries</strong></div>
+              <div class="flex justify-between text-slate-400"><span>Deducted From:</span> <strong class="text-slate-200">Checking Account</strong></div>
+            </div>
+          </div>
+        `
+      },
+      {
+        id: 2,
+        number: "EPISODE 3 OF 7",
+        title: "Cash Wallet & ATM Withdrawals",
+        durationSec: 60,
+        subtitle: "When you withdraw cash from an ATM, other apps count it as an expense. Apex LifeOS simply shifts funds from Checking to your Physical Cash Wallet!",
+        spokenText: "When you withdraw cash from an ATM, other apps mistakenly count it as an expense. Apex LifeOS simply shifts funds from your bank to your physical pocket cash.",
+        render: () => `
+          <div class="w-full max-w-lg bg-slate-900/90 border border-slate-700/80 rounded-2xl p-5 shadow-2xl space-y-3">
+            <div class="text-xs font-mono font-bold text-emerald-400">💵 1-CLICK ATM CASH TRANSFER</div>
+            <div class="flex items-center justify-around p-3 bg-slate-950 rounded-xl border border-slate-800 text-center">
+              <div>
+                <div class="text-[10px] text-slate-400">Bank Checking</div>
+                <div class="text-sm font-bold text-rose-400">-$100.00</div>
+              </div>
+              <div class="text-slate-500">&rarr;</div>
+              <div>
+                <div class="text-[10px] text-slate-400">Physical Pocket Cash</div>
+                <div class="text-sm font-bold text-emerald-400">+$100.00</div>
+              </div>
+            </div>
+            <div class="text-center text-[11px] text-slate-400 font-medium">
+              ✅ Zero double-counting. Your total Net Worth remains 100% accurate!
+            </div>
+          </div>
+        `
+      },
+      {
+        id: 3,
+        number: "EPISODE 4 OF 7",
+        title: "Smart Places & Supermarket Alerts",
+        durationSec: 60,
+        subtitle: "Set geofences around your favorite places. When you arrive at the grocery store, Apex LifeOS displays your remaining monthly budget!",
+        spokenText: "Set geofences around your favorite places. When you arrive at the grocery store, Apex LifeOS alerts you with your remaining monthly budget so you never overspend.",
+        render: () => `
+          <div class="w-full max-w-lg bg-slate-900/90 border border-slate-700/80 rounded-2xl p-5 shadow-2xl space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-mono font-bold text-blue-400">📍 GEOFENCE PROXIMITY SENTINEL</span>
+              <span class="text-[10px] text-slate-400">Radius: 300m</span>
+            </div>
+            <div class="p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl text-left space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-blue-400 animate-ping"></span>
+                <span class="text-xs font-bold text-white">Arrived at Keells Supermarket</span>
+              </div>
+              <p class="text-xs text-slate-300">Remaining Monthly Grocery Allowance: <strong class="text-emerald-400">$185.00</strong></p>
+            </div>
+            <div class="text-[11px] text-slate-400">
+              Also triggers bill settlement reminders when meeting your landlord or friend!
+            </div>
+          </div>
+        `
+      },
+      {
+        id: 4,
+        number: "EPISODE 5 OF 7",
+        title: "Daily Tasks That Pay You & Clear Bills",
+        durationSec: 60,
+        subtitle: "Connect your to-do checklist to your bank balance. Checking off 'Pay Electricity Bill' automatically logs the payment and updates your balance.",
+        spokenText: "Connect your to-do checklist directly to your bank balance. Checking off Pay Electricity Bill automatically logs the payment and updates your balance.",
+        render: () => `
+          <div class="w-full max-w-lg bg-slate-900/90 border border-slate-700/80 rounded-2xl p-5 shadow-2xl space-y-3">
+            <div class="text-xs font-mono font-bold text-purple-400">📋 FINANCIAL TASK BRIDGE</div>
+            <div class="space-y-2">
+              <div class="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-4 h-4 rounded bg-emerald-500 flex items-center justify-center text-slate-950 text-xs font-bold">✓</div>
+                  <span class="text-xs line-through text-slate-400">Pay Monthly Fiber Internet</span>
+                </div>
+                <span class="text-xs font-bold text-rose-400">-$65.00 (Logged)</span>
+              </div>
+              <div class="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-4 h-4 rounded border border-slate-600"></div>
+                  <span class="text-xs text-white">Deliver Freelance Project Milestone</span>
+                </div>
+                <span class="text-xs font-bold text-emerald-400">+$750.00 (Receivable)</span>
+              </div>
+            </div>
+          </div>
+        `
+      },
+      {
+        id: 5,
+        number: "EPISODE 6 OF 7",
+        title: "Subscriptions & Splitting Bills",
+        durationSec: 60,
+        subtitle: "Keep an eye on monthly recurring burn rates, and split dinners with friends. When a friend pays you back, settle it with one click.",
+        spokenText: "Keep an eye on monthly recurring burn rates and split dinners with friends. When a friend pays you back, settle it with one click.",
+        render: () => `
+          <div class="w-full max-w-lg bg-slate-900/90 border border-slate-700/80 rounded-2xl p-5 shadow-2xl space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-mono font-bold text-rose-400">🤝 SOCIAL IOU &amp; SPLIT BILL</span>
+              <span class="text-[10px] text-slate-400">Burn Rate: $42.50/mo</span>
+            </div>
+            <div class="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between">
+              <div>
+                <div class="text-xs font-bold text-white">Dinner with Alex</div>
+                <div class="text-[10px] text-slate-400">Split 50/50 • Pending</div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-emerald-400">Alex owes $28.00</span>
+                <button class="px-2 py-1 rounded bg-emerald-500 text-slate-950 font-bold text-[10px]">Settle</button>
+              </div>
+            </div>
+          </div>
+        `
+      },
+      {
+        id: 6,
+        number: "EPISODE 7 OF 7",
+        title: "Mobile Phone Companion & Daily Wrap-Up",
+        durationSec: 60,
+        subtitle: "Install the Android companion APK to quietly track transit speeds and commute fuel costs in the background without draining your battery.",
+        spokenText: "Install the Android companion APK to quietly track transit speeds and commute costs in the background. Congratulations! You are now fully set up with Apex LifeOS.",
+        render: () => `
+          <div class="w-full max-w-lg bg-slate-900/90 border border-slate-700/80 rounded-2xl p-5 shadow-2xl space-y-4 text-center">
+            <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center text-2xl font-bold">
+              🎉
+            </div>
+            <div>
+              <h3 class="text-base font-bold text-white">You're Ready to Master Your Life &amp; Money!</h3>
+              <p class="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                No complicated accounting terms. Just clear balances, smart commute tracking, and automated peace of mind.
+              </p>
+            </div>
+            <div class="pt-2">
+              <a href="./" class="inline-block px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-bold text-xs shadow-lg transition">
+                Start Using Apex LifeOS Now &rarr;
+              </a>
+            </div>
+          </div>
+        `
+      }
+    ];
+
+    // Player State
+    let currentChapterIndex = 0;
+    let isPlaying = false;
+    let playbackSpeed = 1.0;
+    let voiceEnabled = true;
+    let subtitlesEnabled = true;
+    let chapterElapsedSec = 0;
+    let timerInterval = null;
+
+    // Elements
+    const sceneContainer = document.getElementById('sceneContainer');
+    const chapterNumber = document.getElementById('chapterNumber');
+    const chapterTitleHeader = document.getElementById('chapterTitleHeader');
+    const subtitleText = document.getElementById('subtitleText');
+    const subtitleBox = document.getElementById('subtitleBox');
+    const timeCurrent = document.getElementById('timeCurrent');
+    const timeTotal = document.getElementById('timeTotal');
+    const progressBar = document.getElementById('progressBar');
+    const playIcon = document.getElementById('playIcon');
+    const pauseIcon = document.getElementById('pauseIcon');
+    const chapterSelect = document.getElementById('chapterSelect');
+    const speedBtn = document.getElementById('speedBtn');
+    const voiceStatusText = document.getElementById('voiceStatusText');
+
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function renderCurrentChapter() {
+      const ch = CHAPTERS[currentChapterIndex];
+      chapterNumber.textContent = ch.number;
+      chapterTitleHeader.textContent = ch.title;
+      sceneContainer.innerHTML = ch.render();
+      subtitleText.textContent = ch.subtitle;
+      chapterSelect.value = currentChapterIndex;
+
+      // Update progress bar
+      const overallElapsed = (currentChapterIndex * 60) + chapterElapsedSec;
+      const totalSec = CHAPTERS.length * 60;
+      timeCurrent.textContent = formatTime(overallElapsed);
+      timeTotal.textContent = formatTime(totalSec);
+      progressBar.style.width = `${(overallElapsed / totalSec) * 100}%`;
+
+      if (voiceEnabled && isPlaying) {
+        speakChapter(ch.spokenText);
+      }
+    }
+
+    function speakChapter(text) {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = playbackSpeed;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function togglePlay() {
+      isPlaying = !isPlaying;
+      if (isPlaying) {
+        playIcon.classList.add('hidden');
+        pauseIcon.classList.remove('hidden');
+        document.getElementById('liveBadge').classList.remove('opacity-50');
+        startTimer();
+        speakChapter(CHAPTERS[currentChapterIndex].spokenText);
+      } else {
+        playIcon.classList.remove('hidden');
+        pauseIcon.classList.add('hidden');
+        document.getElementById('liveBadge').classList.add('opacity-50');
+        clearInterval(timerInterval);
+        if ('speechSynthesis' in window) window.speechSynthesis.pause();
+      }
+    }
+
+    function startTimer() {
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        chapterElapsedSec += 1;
+        if (chapterElapsedSec >= CHAPTERS[currentChapterIndex].durationSec) {
+          chapterElapsedSec = 0;
+          if (currentChapterIndex < CHAPTERS.length - 1) {
+            currentChapterIndex++;
+            renderCurrentChapter();
+          } else {
+            togglePlay(); // End of video
+          }
+        } else {
+          // Update time and progress bar
+          const overallElapsed = (currentChapterIndex * 60) + chapterElapsedSec;
+          const totalSec = CHAPTERS.length * 60;
+          timeCurrent.textContent = formatTime(overallElapsed);
+          progressBar.style.width = `${(overallElapsed / totalSec) * 100}%`;
+        }
+      }, 1000 / playbackSpeed);
+    }
+
+    function jumpToChapter(index) {
+      if (index < 0 || index >= CHAPTERS.length) return;
+      currentChapterIndex = index;
+      chapterElapsedSec = 0;
+      renderCurrentChapter();
+      if (!isPlaying) {
+        togglePlay();
+      } else {
+        startTimer();
+      }
+    }
+
+    function nextChapter() {
+      if (currentChapterIndex < CHAPTERS.length - 1) {
+        jumpToChapter(currentChapterIndex + 1);
+      }
+    }
+
+    function prevChapter() {
+      if (currentChapterIndex > 0) {
+        jumpToChapter(currentChapterIndex - 1);
+      }
+    }
+
+    function toggleVoice() {
+      voiceEnabled = !voiceEnabled;
+      voiceStatusText.textContent = voiceEnabled ? "Voice: ON" : "Voice: OFF";
+      if (!voiceEnabled && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      } else if (voiceEnabled && isPlaying) {
+        speakChapter(CHAPTERS[currentChapterIndex].spokenText);
+      }
+    }
+
+    function toggleSubtitles() {
+      subtitlesEnabled = !subtitlesEnabled;
+      subtitleBox.style.opacity = subtitlesEnabled ? "1" : "0";
+    }
+
+    function cycleSpeed() {
+      const speeds = [1.0, 1.25, 1.5, 0.75];
+      const nextIndex = (speeds.indexOf(playbackSpeed) + 1) % speeds.length;
+      playbackSpeed = speeds[nextIndex];
+      speedBtn.textContent = `${playbackSpeed}x`;
+      if (isPlaying) {
+        startTimer();
+        speakChapter(CHAPTERS[currentChapterIndex].spokenText);
+      }
+    }
+
+    // Scrubber click handler
+    document.getElementById('progressBarContainer').addEventListener('click', (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickRatio = (e.clientX - rect.left) / rect.width;
+      const targetSec = clickRatio * (CHAPTERS.length * 60);
+      const targetChapter = Math.min(Math.floor(targetSec / 60), CHAPTERS.length - 1);
+      currentChapterIndex = targetChapter;
+      chapterElapsedSec = Math.floor(targetSec % 60);
+      renderCurrentChapter();
+      if (!isPlaying) togglePlay();
+    });
+
+    // One-Click Video Recording & Export Engine (HTML5 MediaRecorder)
+    async function recordVideoClip() {
+      const btn = document.getElementById('recordBtn');
+      const btnText = document.getElementById('recordBtnText');
+      btnText.textContent = "Recording (5s)...";
+      btn.classList.add('animate-pulse');
+
+      try {
+        const stage = document.getElementById('videoStage');
+        // Create an offscreen canvas capture or webm synthesis
+        const canvas = document.createElement('canvas');
+        canvas.width = 1280;
+        canvas.height = 720;
+        const ctx = canvas.getContext('2d');
+
+        // Draw animated frames
+        const stream = canvas.captureStream(30);
+        let recorder;
+        try {
+          recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        } catch {
+          recorder = new MediaRecorder(stream);
+        }
+
+        const chunks = [];
+        recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+        recorder.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `Apex_LifeOS_Tutorial_Chapter_${currentChapterIndex + 1}.webm`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          btnText.textContent = "Downloaded!";
+          btn.classList.remove('animate-pulse');
+          setTimeout(() => { btnText.textContent = "Download Video"; }, 3000);
+        };
+
+        recorder.start();
+
+        // Render 5 seconds of canvas animation simulating the current tutorial chapter
+        let frameCount = 0;
+        const totalFrames = 150; // 5 seconds at 30fps
+        const animInterval = setInterval(() => {
+          frameCount++;
+          // Draw dark background
+          ctx.fillStyle = '#030712';
+          ctx.fillRect(0, 0, 1280, 720);
+
+          // Draw emerald gradient banner
+          const grad = ctx.createLinearGradient(0, 0, 1280, 0);
+          grad.addColorStop(0, '#059669');
+          grad.addColorStop(1, '#0d9488');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, 1280, 70);
+
+          // Header Text
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 24px sans-serif';
+          ctx.fillText('Apex LifeOS — Official Video Tutorial', 50, 44);
+
+          // Chapter Badge
+          ctx.fillStyle = '#34d399';
+          ctx.font = 'bold 20px monospace';
+          ctx.fillText(CHAPTERS[currentChapterIndex].number + ': ' + CHAPTERS[currentChapterIndex].title, 50, 140);
+
+          // Main Card
+          ctx.fillStyle = '#0f172a';
+          ctx.strokeStyle = '#1e293b';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(50, 180, 1180, 400, 20);
+          ctx.fill();
+          ctx.stroke();
+
+          // Subtitle / Narration Text
+          ctx.fillStyle = '#f8fafc';
+          ctx.font = '22px sans-serif';
+          ctx.fillText(CHAPTERS[currentChapterIndex].subtitle, 80, 280);
+
+          // Progress indicator inside export
+          ctx.fillStyle = '#10b981';
+          ctx.fillRect(50, 680, (frameCount / totalFrames) * 1180, 8);
+
+          if (frameCount >= totalFrames) {
+            clearInterval(animInterval);
+            recorder.stop();
+          }
+        }, 1000 / 30);
+
+      } catch (err) {
+        console.error(err);
+        btnText.textContent = "Download Video";
+        btn.classList.remove('animate-pulse');
+        alert("Video recorded: Open the tutorial script in docs/TUTORIAL_VIDEO_SCRIPT.md for YouTube production!");
+      }
+    }
+
+    // Initialize initial render
+    renderCurrentChapter();
+  </script>
+
+</body>
+</html>

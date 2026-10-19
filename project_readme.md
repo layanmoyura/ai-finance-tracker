@@ -2,6 +2,12 @@
 
 A modern, serverless Personal ERP platform bridging personal wealth, physical movement telemetry, and daily life operations with zero monthly hosting costs. Built with **React 19**, **TypeScript**, **Vite 8**, **Tailwind CSS v4**, **Supabase** (PostgreSQL, Auth, Edge Functions), and **Google Gemini Flash** for natural language ledger automation and multi-currency intelligence.
 
+<p align="center">
+  <a href="docs/Apex_LifeOS_Technical_Documentation.pdf"><strong>📄 Technical Documentation (PDF)</strong></a> •
+  <a href="https://layanpro123456.github.io/ai-finance-tracker/tutorial.html"><strong>🎬 Beginner Video Tutorial</strong></a> •
+  <a href="docs/TUTORIAL_VIDEO_SCRIPT.md"><strong>📝 Video Production Script</strong></a>
+</p>
+
 ---
 
 ## 🌟 What Makes Apex LifeOS Different?

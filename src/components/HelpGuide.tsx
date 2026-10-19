@@ -30,6 +30,11 @@ import {
   HeartPulse,
   RotateCcw,
   Database,
+  Video,
+  FileText,
+  Download,
+  Play,
+  ExternalLink,
 } from 'lucide-react';
 
 interface HelpGuideProps {
@@ -185,6 +190,79 @@ export const HelpGuide: React.FC<HelpGuideProps> = ({ onNavigateTab }) => {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Featured Documentation & Video Tutorial Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Card 1: Video Tutorial for Non-Tech People */}
+        <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-emerald-500/30 rounded-2xl p-5 shadow-lg relative overflow-hidden flex flex-col justify-between">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-bold font-mono uppercase">
+                <Video className="w-3.5 h-3.5" />
+                <span>Non-Technical Users</span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-400">7-Min Masterclass</span>
+            </div>
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <span>Beginner Video Tutorial Walkthrough</span>
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Interactive animated video guide covering hands-free AI voice expense logging, physical cash &amp; ATM withdrawals, supermarket geofences, and task-linked bills.
+            </p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+            <a
+              href="./tutorial.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-md transition cursor-pointer"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Launch Video Tutorial</span>
+              <ExternalLink className="w-3 h-3 ml-0.5 opacity-70" />
+            </a>
+            <span className="text-[11px] font-mono text-emerald-400 font-semibold">Web Audio + Subtitles</span>
+          </div>
+        </div>
+
+        {/* Card 2: Technical PDF Documentation for Tech People */}
+        <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-blue-500/30 rounded-2xl p-5 shadow-lg relative overflow-hidden flex flex-col justify-between">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[11px] font-bold font-mono uppercase">
+                <FileText className="w-3.5 h-3.5" />
+                <span>Engineers &amp; SysAdmins</span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-400">PDF • 1.5 MB</span>
+            </div>
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <span>Technical Documentation &amp; Architecture</span>
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Complete engineering manual covering 13-table database schema, 4-tier prompt injection defense, single-device session locking, and Android telemetry daemon.
+            </p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-800 flex flex-wrap items-center gap-2">
+            <a
+              href="./Apex_LifeOS_Technical_Documentation.pdf"
+              download="Apex_LifeOS_Technical_Documentation.pdf"
+              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-2 shadow-md transition cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download PDF</span>
+            </a>
+            <a
+              href="./technical-docs.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <span>View Online HTML</span>
+              <ExternalLink className="w-3 h-3 text-slate-400" />
+            </a>
           </div>
         </div>
       </div>

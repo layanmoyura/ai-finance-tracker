@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apex LifeOS — Technical Architecture &amp; System Documentation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #059669;
+      --primary-dark: #047857;
+      --bg-dark: #030712;
+      --card-bg: #0f172a;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-color: #1e293b;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #1e293b;
+      background-color: #f8fafc;
+      line-height: 1.6;
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Print & PDF Specific Optimization */
+    @page {
+      size: A4;
+      margin: 16mm 14mm 18mm 14mm;
+      @bottom-right {
+        content: "Page " counter(page) " of " counter(pages);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 8pt;
+        color: #64748b;
+      }
+      @bottom-left {
+        content: "Apex LifeOS • Technical Architecture Blueprint";
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 8pt;
+        color: #64748b;
+      }
+    }
+
+    @media print {
+      body {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        font-size: 9.5pt;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .page-break {
+        page-break-before: always;
+        break-before: page;
+      }
+      .avoid-break {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+      .dark-theme-print {
+        background-color: #090d16 !important;
+        color: #f8fafc !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      a {
+        text-decoration: none;
+        color: inherit;
+      }
+      pre, code {
+        font-size: 8pt !important;
+      }
+    }
+
+    /* On-Screen Preview Enhancements */
+    .doc-container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: #ffffff;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+    }
+
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 12px 16px;
+      overflow-x: auto;
+      border: 1px solid #1e293b;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85em;
+    }
+
+    .inline-code {
+      background: #f1f5f9;
+      color: #0f172a;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .badge-tech {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body class="p-0 sm:p-6 md:p-10 bg-slate-100 text-slate-800">
+
+  <!-- Interactive Action Header (Screen Only) -->
+  <div class="no-print max-w-[900px] mx-auto mb-6 flex flex-wrap items-center justify-between gap-4 bg-slate-900 text-white p-4 rounded-2xl shadow-lg border border-slate-800">
+    <div class="flex items-center gap-3">
+      <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></div>
+      <div>
+        <div class="text-xs font-mono font-bold text-emerald-400 uppercase tracking-widest">Apex LifeOS Documentation</div>
+        <div class="text-sm font-semibold text-slate-200">System Architecture &amp; Developer Specification</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="window.print()" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl shadow transition flex items-center gap-2 cursor-pointer">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+        <span>Print / Save as PDF</span>
+      </button>
+      <a href="./" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs rounded-xl transition">
+        App Dashboard
+      </a>
+      <a href="./tutorial.html" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-medium text-xs rounded-xl transition">
+        Video Tutorial
+      </a>
+    </div>
+  </div>
+
+  <!-- Document Sheet -->
+  <div class="doc-container p-8 sm:p-14 rounded-2xl border border-slate-200 text-slate-800">
+
+    <!-- ========================================== -->
+    <!-- COVER PAGE -->
+    <!-- ========================================== -->
+    <div class="border-b border-slate-200 pb-10 mb-10">
+      <div class="flex items-center justify-between mb-8">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-950 font-extrabold text-lg shadow-md shadow-emerald-500/20">
+            A
+          </div>
+          <div>
+            <span class="font-extrabold tracking-tight text-slate-900 text-lg">APEX <span class="text-emerald-600">LIFEOS</span></span>
+            <span class="text-[10px] font-mono text-slate-400 ml-1.5 uppercase font-semibold">Enterprise Core</span>
+          </div>
+        </div>
+        <div class="text-right font-mono text-xs text-slate-500">
+          <div>DOC-REF: ALOS-TEC-2026.4</div>
+          <div class="text-emerald-600 font-semibold">Security Classification: Standard Tier</div>
+        </div>
+      </div>
+
+      <div class="mt-8 space-y-4">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-mono font-semibold">
+          <span>●</span>
+          <span>Technical Whitepaper &amp; Architectural Blueprint</span>
+        </div>
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight leading-tight">
+          Apex LifeOS: Personal Finance &amp; Operations ERP
+        </h1>
+        <p class="text-base sm:text-lg text-slate-600 max-w-2xl font-normal leading-relaxed">
+          Comprehensive Developer Specification, Security Governance Model, 13-Table Database Schema Reference, and Telemetry Engine Architecture.
+        </p>
+      </div>
+
+      <!-- Metadata Grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8 pt-6 border-t border-slate-100 text-xs font-mono">
+        <div>
+          <span class="text-slate-400 block uppercase tracking-wider text-[10px]">Release Version</span>
+          <span class="font-bold text-slate-800">v2.4 High Performance</span>
+        </div>
+        <div>
+          <span class="text-slate-400 block uppercase tracking-wider text-[10px]">Frontend Stack</span>
+          <span class="font-bold text-slate-800">React 19 • Vite 8 • Tailwind v4</span>
+        </div>
+        <div>
+          <span class="text-slate-400 block uppercase tracking-wider text-[10px]">Backend &amp; DB</span>
+          <span class="font-bold text-slate-800">Supabase (PostgreSQL 15+)</span>
+        </div>
+        <div>
+          <span class="text-slate-400 block uppercase tracking-wider text-[10px]">AI Engine</span>
+          <span class="font-bold text-slate-800">Gemini 2.0 / 2.5 Flash</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TABLE OF CONTENTS -->
+    <!-- ========================================== -->
+    <div class="avoid-break bg-slate-50 border border-slate-200/80 rounded-xl p-6 mb-12">
+      <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2">
+        <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
+        Table of Contents
+      </h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-y-2.5 gap-x-6 text-xs text-slate-700">
+        <div><a href="#sec-overview" class="hover:text-emerald-600 font-medium">1. Executive Overview &amp; Personal ERP Philosophy</a></div>
+        <div><a href="#sec-architecture" class="hover:text-emerald-600 font-medium">2. System Architecture &amp; Tech Stack Topology</a></div>
+        <div><a href="#sec-security" class="hover:text-emerald-600 font-medium">3. Security Architecture &amp; Threat Defense</a></div>
+        <div><a href="#sec-schema" class="hover:text-emerald-600 font-medium">4. Comprehensive 13-Table Database Schema</a></div>
+        <div><a href="#sec-algorithms" class="hover:text-emerald-600 font-medium">5. Algorithmic Engines &amp; Telemetry Logic</a></div>
+        <div><a href="#sec-edge-functions" class="hover:text-emerald-600 font-medium">6. Edge Functions &amp; Multi-Currency Engine</a></div>
+        <div><a href="#sec-android" class="hover:text-emerald-600 font-medium">7. Android Companion Telemetry Subsystem</a></div>
+        <div><a href="#sec-ops" class="hover:text-emerald-600 font-medium">8. Deployment, CI/CD &amp; Operations Runbook</a></div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- SECTION 1: EXECUTIVE OVERVIEW -->
+    <!-- ========================================== -->
+    <section id="sec-overview" class="mb-12">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-mono text-xs font-bold flex items-center justify-center">01</span>
+        <h2 class="text-xl font-bold text-slate-900 tracking-tight">Executive Overview &amp; Personal ERP Philosophy</h2>
+      </div>
+      <p class="text-sm text-slate-600 leading-relaxed mb-4">
+        Traditional personal finance software operates asynchronously and reactively: users manually log expenses long after transactions occur, with zero awareness of spatial mobility, operational task commitments, or real-time context. This leads to high cognitive load, missed bill deadlines, delayed cash tracking, and incomplete records.
+      </p>
+      <p class="text-sm text-slate-600 leading-relaxed mb-4">
+        <strong>Apex LifeOS</strong> resolves this friction by operating as a <strong>Personal Enterprise Resource Planning (ERP)</strong> platform. It bridges three core domains into a unified, synchronized reactive runtime:
+      </p>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 my-6 avoid-break">
+        <div class="p-4 bg-emerald-50/50 border border-emerald-100 rounded-xl">
+          <div class="text-xs font-mono font-bold text-emerald-700 uppercase mb-1">Domain A: Finance</div>
+          <div class="text-sm font-bold text-slate-900 mb-1">Liquid Ledger &amp; Cash Vault</div>
+          <p class="text-xs text-slate-600">Multi-currency balance sheets, accounts, monthly budgets, physical cash/ATM wallet, and zero-shot AI transaction parsing.</p>
+        </div>
+        <div class="p-4 bg-blue-50/50 border border-blue-100 rounded-xl">
+          <div class="text-xs font-mono font-bold text-blue-700 uppercase mb-1">Domain B: Mobility</div>
+          <div class="text-sm font-bold text-slate-900 mb-1">Telemetry &amp; Geofencing</div>
+          <p class="text-xs text-slate-600">Continuous GPS velocity tracking, traffic-jam hysteresis filtering, fuel/fare estimation, and spatial geofence payment reminders.</p>
+        </div>
+        <div class="p-4 bg-purple-50/50 border border-purple-100 rounded-xl">
+          <div class="text-xs font-mono font-bold text-purple-700 uppercase mb-1">Domain C: Operations</div>
+          <div class="text-sm font-bold text-slate-900 mb-1">Daily Task-Ledger Bridge</div>
+          <p class="text-xs text-slate-600">Payable bills, receivable milestones, recurring subscription burn rates, peer IOUs, and personal asset valuations.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SECTION 2: SYSTEM ARCHITECTURE -->
+    <!-- ========================================== -->
+    <section id="sec-architecture" class="mb-12 page-break">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-mono text-xs font-bold flex items-center justify-center">02</span>
+        <h2 class="text-xl font-bold text-slate-900 tracking-tight">System Architecture &amp; Tech Stack Topology</h2>
+      </div>
+      <p class="text-sm text-slate-600 leading-relaxed mb-6">
+        Apex LifeOS is engineered with a modular, reactive architecture decoupled into distinct presentation, serverless compute, persistence, and telemetry tiers.
+      </p>
+
+      <!-- Architecture Diagram (Boxed Topology) -->
+      <div class="bg-slate-900 text-white p-6 rounded-2xl mb-6 avoid-break font-mono text-xs border border-slate-800">
+        <div class="text-slate-400 font-bold mb-4 uppercase tracking-wider text-[11px] text-emerald-400">
+          ■ Apex LifeOS High-Level Architecture Topology
+        </div>
+        <div class="space-y-4">
+          <div class="p-3 bg-slate-800/90 rounded-lg border border-slate-700">
+            <div class="text-emerald-400 font-bold mb-1">1. PRESENTATION LAYER (Client Browser / PWA)</div>
+            <div class="text-slate-300">React 19 + TypeScript 5.8 + Vite 8 + Tailwind CSS v4</div>
+            <div class="text-slate-400 text-[11px] mt-1">Modules: 2-Row Nav, AI NLP Input, Cash Vault, Tasks Bridge, Map &amp; Geofences, Assets, Subscriptions</div>
+          </div>
+          <div class="flex justify-center text-slate-500 font-bold">↕ HTTPS / WSS / REST / BroadcastChannel</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="p-3 bg-slate-800/90 rounded-lg border border-slate-700">
+              <div class="text-teal-400 font-bold mb-1">2. SERVERLESS COMPUTE LAYER</div>
+              <div class="text-slate-300">Supabase Edge Functions (Deno)</div>
+              <div class="text-slate-400 text-[11px] mt-1">Function: parse-transaction<br>Model: Google Gemini 2.0 / 2.5 Flash</div>
+            </div>
+            <div class="p-3 bg-slate-800/90 rounded-lg border border-slate-700">
+              <div class="text-sky-400 font-bold mb-1">3. PERSISTENCE &amp; AUTH TIER</div>
+              <div class="text-slate-300">Supabase PostgreSQL 15 + Supabase Auth</div>
+              <div class="text-slate-400 text-[11px] mt-1">13 RLS-Secured Tables • Realtime Subscriptions • Zero-Hallucination Stored Procedures</div>
+            </div>
+          </div>
+          <div class="flex justify-center text-slate-500 font-bold">↕ PostgREST GPS Ingestion Pipeline</div>
+          <div class="p-3 bg-slate-800/90 rounded-lg border border-slate-700">
+            <div class="text-purple-400 font-bold mb-1">4. TELEMETRY COMPANION DAEMON (Android APK)</div>
+            <div class="text-slate-300">Kotlin Native Service (Foreground Service + WorkManager)</div>
+            <div class="text-slate-400 text-[11px] mt-1">Telemetry: device_location_pings (lat, lng, speed, battery, mode) • Hardware-Partitioned Isolation</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+        <div class="p-4 bg-white border border-slate-200 rounded-xl">
+          <div class="font-bold text-slate-900 mb-2">Frontend Architecture Highlights</div>
+          <ul class="space-y-1.5 text-slate-600 list-disc list-inside">
+            <li><strong>React 19 &amp; Vite 8:</strong> Instant HMR, zero-bundle overhead with native ESM.</li>
+            <li><strong>Tailwind CSS v4:</strong> Dynamic theme engine supporting OLED Dark Mode and Light Mode.</li>
+            <li><strong>Web Speech API:</strong> 17+ spoken languages with interim transcript streaming and hands-free auto-commit.</li>
+            <li><strong>Two-Row Navigation:</strong> Complete decoupling of brand/account controls from module switching.</li>
+          </ul>
+        </div>
+        <div class="p-4 bg-white border border-slate-200 rounded-xl">
+          <div class="font-bold text-slate-900 mb-2">Backend &amp; Security Highlights</div>
+          <ul class="space-y-1.5 text-slate-600 list-disc list-inside">
+            <li><strong>Multi-Tenant Isolation:</strong> Strict Row-Level Security (RLS) on all 13 tables.</li>
+            <li><strong>Single-Device Lock:</strong> Atomic session registry preventing concurrent session crosstalk.</li>
+            <li><strong>Prompt Defense:</strong> 4-tier sanitization preventing jailbreak and exfiltration vectors.</li>
+            <li><strong>Zero-Hallucination Reset:</strong> Clean starting balances at strictly 0.00.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SECTION 3: SECURITY & THREAT DEFENSE -->
+    <!-- ========================================== -->
+    <section id="sec-security" class="mb-12 page-break">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-mono text-xs font-bold flex items-center justify-center">03</span>
+        <h2 class="text-xl font-bold text-slate-900 tracking-tight">Security Architecture &amp; Threat Defense</h2>
+      </div>
+      <p class="text-sm text-slate-600 leading-relaxed mb-4">
+        Apex LifeOS handles sensitive personal telemetry, location trails, and financial records. The platform implements an end-to-end Zero-Trust posture across AI invocation, administrative governance, hardware sessions, and database access.
+      </p>
+
+      <!-- 4-Tier Prompt Defense -->
+      <div class="border border-slate-200 rounded-xl p-5 mb-6 bg-slate-50/50 avoid-break">
+        <h3 class="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
+          <span class="badge-tech bg-rose-100 text-rose-800 border border-rose-300">DEFENSE-IN-DEPTH</span>
+          4-Tier AI Prompt Injection Mitigation Matrix
+        </h3>
+        <p class="text-xs text-slate-600 mb-4">
+          Natural language AI input fields are susceptible to adversarial prompt injection. Apex LifeOS executes a four-phase defensive barrier:
+        </p>
+        <div class="space-y-3 text-xs">
+          <div class="p-3 bg-white border border-slate-200 rounded-lg">
+            <span class="font-bold text-rose-700 font-mono">Tier 1: Pre-Execution Regex Scanner</span>
+            <p class="text-slate-600 mt-1">Intercepts keywords including <code class="inline-code">ignore previous instructions</code>, <code class="inline-code">you are now DAN</code>, <code class="inline-code">system prompt</code>, <code class="inline-code">api_key</code>, and script tags before dispatching any network request to Gemini.</p>
+          </div>
+          <div class="p-3 bg-white border border-slate-200 rounded-lg">
+            <span class="font-bold text-amber-700 font-mono">Tier 2: System Instruction Boundary Isolation</span>
+            <p class="text-slate-600 mt-1">Prompts are never concatenated into a single string. The core persona and JSON extraction guidelines are loaded via Gemini's native <code class="inline-code">systemInstruction</code> parameter, while user text is enclosed in inert XML tags: <code class="inline-code">&lt;untrusted_user_note&gt;...&lt;/untrusted_user_note&gt;</code>.</p>
+          </div>
+          <div class="p-3 bg-white border border-slate-200 rounded-lg">
+            <span class="font-bold text-blue-700 font-mono">Tier 3: Post-Execution Strict Schema Validation</span>
+            <p class="text-slate-600 mt-1">AI responses are structurally inspected. Numerical limits enforce transaction caps ($100,000,000.00), categories are mapped strictly to the approved 10-category taxonomy, and descriptions are stripped of HTML/script elements.</p>
+          </div>
+          <div class="p-3 bg-white border border-slate-200 rounded-lg">
+            <span class="font-bold text-emerald-700 font-mono">Tier 4: Client-Side Real-Time Prompt Guard</span>
+            <p class="text-slate-600 mt-1">Real-time keystroke monitoring evaluates adversarial entropy. If risky sequences are detected, an alert badge is rendered and the submit button is programmatically disabled.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Admin Governance & Single Device Lock -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs avoid-break">
+        <div class="p-4 bg-white border border-slate-200 rounded-xl">
+          <div class="font-bold text-slate-900 mb-2 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+            Role-Based Admin Governance (RBAC)
+          </div>
+          <p class="text-slate-600 leading-relaxed mb-2">
+            Platform governance and database wipe operations are hardcoded exclusively to the identity:
+            <code class="inline-code font-bold">layanmoyura@proton.me</code>.
+          </p>
+          <p class="text-slate-600 leading-relaxed">
+            Public UI headers render no "Admin" buttons. Authorized entry is strictly granted via:
+          </p>
+          <ul class="list-disc list-inside text-slate-600 mt-1 space-y-0.5">
+            <li>Keyboard shortcut: <kbd class="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded text-[10px]">Ctrl + Shift + A</kbd></li>
+            <li>URL fragment router: <code class="inline-code">#admin</code></li>
+            <li>Settings modal conditional link (visible only to admin session)</li>
+          </ul>
+        </div>
+        <div class="p-4 bg-white border border-slate-200 rounded-xl">
+          <div class="font-bold text-slate-900 mb-2 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            Single-Device Session Enforcement
+          </div>
+          <p class="text-slate-600 leading-relaxed mb-2">
+            To prevent cross-device route contamination and conflicting balances, users are restricted to <strong>one active hardware session</strong> via table <code class="inline-code">user_device_sessions</code>.
+          </p>
+          <ul class="list-disc list-inside text-slate-600 space-y-0.5">
+            <li>Logging into a new device registers the hardware fingerprint.</li>
+            <li>Prior active devices are flagged and safely logged out.</li>
+            <li>Background heartbeat sentinel continuously verifies ownership.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SECTION 4: 13-TABLE DATABASE SCHEMA -->
+    <!-- ========================================== -->
+    <section id="sec-schema" class="mb-12 page-break">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-mono text-xs font-bold flex items-center justify-center">04</span>
+        <h2 class="text-xl font-bold text-slate-900 tracking-tight">Comprehensive 13-Table Database Schema Reference</h2>
+      </div>
+      <p class="text-sm text-slate-600 leading-relaxed mb-4">
+        All tables are provisioned in PostgreSQL with native UUID primary keys, cascade referential integrity, and Row-Level Security (RLS) guaranteeing data tenancy.
+      </p>
+
+      <!-- Table Dictionary -->
+      <div class="overflow-x-auto avoid-break mb-6">
+        <table class="w-full text-left text-xs border border-slate-200 rounded-xl overflow-hidden">
+          <thead class="bg-slate-100 text-slate-700 font-mono text-[11px] uppercase border-b border-slate-200">
+            <tr>
+              <th class="p-2.5">#</th>
+              <th class="p-2.5">Table Name</th>
+              <th class="p-2.5">Primary Key</th>
+              <th class="p-2.5">Foreign Keys &amp; Relations</th>
+              <th class="p-2.5">RLS Rule Summary</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 font-mono text-[11px]">
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">1</td>
+              <td class="p-2.5 font-bold text-slate-900">accounts</td>
+              <td class="p-2.5 text-emerald-600">id (UUID)</td>
+              <td class="p-2.5">user_id &rarr; auth.users</td>
+              <td class="p-2.5 text-slate-600">auth.uid() = user_id</td>
+            </tr>
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">2</td>
+              <td class="p-2.5 font-bold text-slate-900">categories</td>
+              <td class="p-2.5 text-emerald-600">id (UUID)</td>
+              <td class="p-2.5">user_id &rarr; auth.users</td>
+              <td class="p-2.5 text-slate-600">user_id OR is_default = TRUE</td>
+            </tr>
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">3</td>
+              <td class="p-2.5 font-bold text-slate-900">transactions</td>
+              <td class="p-2.5 text-emerald-600">id (UUID)</td>
+              <td class="p-2.5">account_id &rarr; accounts, category_id &rarr; categories</td>
+              <td class="p-2.5 text-slate-600">auth.uid() = user_id</td>
+            </tr>
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">4</td>
+              <td class="p-2.5 font-bold text-slate-900">budgets</td>
+              <td class="p-2.5 text-emerald-600">id (UUID)</td>
+              <td class="p-2.5">category_id &rarr; categories (UNIQUE with month_year)</td>
+              <td class="p-2.5 text-slate-600">auth.uid() = user_id</td>
+            </tr>
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">5</td>
+              <td class="p-2.5 font-bold text-slate-900">tasks</td>
+              <td class="p-2.5 text-emerald-600">id (UUID)</td>
+              <td class="p-2.5">account_id, category_id, related_transaction_id</td>
+              <td class="p-2.5 text-slate-600">auth.uid() = user_id</td>
+            </tr>
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">6</td>
+              <td class="p-2.5 font-bold text-slate-900">personal_assets</td>
+              <td class="p-2.5 text-emerald-600">id (UUID)</td>
+              <td class="p-2.5">linked_transaction_id &rarr; transactions</td>
+              <td class="p-2.5 text-slate-600">auth.uid() = user_id</td>
+            </tr>
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">7</td>
+              <td class="p-2.5 font-bold text-slate-900">subscriptions</td>
+              <td class="p-2.5 text-emerald-600">id (UUID)</td>
+              <td class="p-2.5">account_id &rarr; accounts, category_id &rarr; categories</td>
+              <td class="p-2.5 text-slate-600">auth.uid() = user_id</td>
+            </tr>
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">8</td>
+              <td class="p-2.5 font-bold text-slate-900">contacts_ledger</td>
+              <td class="p-2.5 text-emerald-600">id (UUID)</td>
+              <td class="p-2.5">settled_transaction_id &rarr; transactions</td>
+              <td class="p-2.5 text-slate-600">auth.uid() = user_id</td>
+            </tr>
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">9</td>
+              <td class="p-2.5 font-bold text-slate-900">saved_places</td>
+              <td class="p-2.5 text-emerald-600">id (UUID)</td>
+              <td class="p-2.5">category_id, linked_task_id, linked_contact_id</td>
+              <td class="p-2.5 text-slate-600">auth.uid() = user_id</td>
+            </tr>
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">10</td>
+              <td class="p-2.5 font-bold text-slate-900">mobility_timeline_events</td>
+              <td class="p-2.5 text-emerald-600">id (UUID)</td>
+              <td class="p-2.5">user_id &rarr; auth.users</td>
+              <td class="p-2.5 text-slate-600">auth.uid() = user_id</td>
+            </tr>
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">11</td>
+              <td class="p-2.5 font-bold text-slate-900">daily_mobility_stats</td>
+              <td class="p-2.5 text-emerald-600">id (UUID)</td>
+              <td class="p-2.5">user_id, stat_date (UNIQUE compound key)</td>
+              <td class="p-2.5 text-slate-600">auth.uid() = user_id</td>
+            </tr>
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">12</td>
+              <td class="p-2.5 font-bold text-slate-900">device_location_pings</td>
+              <td class="p-2.5 text-emerald-600">id (UUID)</td>
+              <td class="p-2.5">user_id, device_id (Hardware Telemetry Beacon)</td>
+              <td class="p-2.5 text-slate-600">auth.uid() = user_id</td>
+            </tr>
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-2.5 text-slate-400">13</td>
+              <td class="p-2.5 font-bold text-slate-900">user_device_sessions</td>
+              <td class="p-2.5 text-emerald-600">user_id (UUID)</td>
+              <td class="p-2.5">active_device_id, last_active_at</td>
+              <td class="p-2.5 text-slate-600">auth.uid() = user_id</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- SQL Routine Highlight -->
+      <div class="avoid-break">
+        <h4 class="text-xs font-mono font-bold text-slate-700 uppercase mb-2">Zero-Hallucination Reset Stored Procedure</h4>
+        <pre><code>-- PL/pgSQL Atomic Data Purge &amp; Clean Account Initialization
+CREATE OR REPLACE FUNCTION public.admin_purge_user_data(target_user_id UUID)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    DELETE FROM public.transactions WHERE user_id = target_user_id;
+    DELETE FROM public.budgets WHERE user_id = target_user_id;
+    DELETE FROM public.categories WHERE user_id = target_user_id AND is_default = FALSE;
+    DELETE FROM public.tasks WHERE user_id = target_user_id;
+    DELETE FROM public.personal_assets WHERE user_id = target_user_id;
+    DELETE FROM public.subscriptions WHERE user_id = target_user_id;
+    DELETE FROM public.contacts_ledger WHERE user_id = target_user_id;
+    DELETE FROM public.device_location_pings WHERE user_id = target_user_id;
+    DELETE FROM public.saved_places WHERE user_id = target_user_id;
+    DELETE FROM public.mobility_timeline_events WHERE user_id = target_user_id;
+    DELETE FROM public.daily_mobility_stats WHERE user_id = target_user_id;
+    DELETE FROM public.user_device_sessions WHERE user_id = target_user_id;
+    DELETE FROM public.accounts WHERE user_id = target_user_id;
+
+    -- Strict zero starting balance
+    INSERT INTO public.accounts (user_id, name, balance, currency)
+    VALUES (target_user_id, 'Primary Checking', 0.00, 'USD');
+
+    RETURN jsonb_build_object('success', true, 'message', 'Purged &amp; reset to 0.00');
+END;
+$$;</code></pre>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SECTION 5: ALGORITHMIC ENGINES -->
+    <!-- ========================================== -->
+    <section id="sec-algorithms" class="mb-12 page-break">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-mono text-xs font-bold flex items-center justify-center">05</span>
+        <h2 class="text-xl font-bold text-slate-900 tracking-tight">Algorithmic Engines &amp; Telemetry Logic</h2>
+      </div>
+      <p class="text-sm text-slate-600 leading-relaxed mb-4">
+        The core intelligence of Apex LifeOS relies on deterministic spatial mathematics and stateful hysteresis filters.
+      </p>
+
+      <div class="space-y-4 text-xs avoid-break">
+        <!-- Haversine & Hysteresis -->
+        <div class="p-4 bg-white border border-slate-200 rounded-xl">
+          <div class="font-bold text-slate-900 text-sm mb-2">1. Haversine Velocity Engine with Traffic Jam Hysteresis</div>
+          <p class="text-slate-600 leading-relaxed mb-2">
+            Distance between consecutive GPS fixes \((lat_1, lon_1)\) and \((lat_2, lon_2)\) is computed via the great-circle Haversine formula:
+          </p>
+          <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-800 mb-2">
+            d = 2R · arcsin( √( sin²(Δlat/2) + cos(lat1)·cos(lat2)·sin²(Δlon/2) ) )<br>
+            velocity = (d / Δt) · 3600  [km/h]
+          </div>
+          <p class="text-slate-600 leading-relaxed">
+            <strong>The Traffic Jam Problem &amp; Solution:</strong> Standard apps falsely reclassify car drivers waiting at red lights or crawling in bumper-to-bumper city traffic (0–15 km/h) as "pedestrians walking". Apex LifeOS maintains a motorized speed hysteresis buffer. If the vehicle previously maintained speed &gt; 25 km/h within a sliding 10-minute window, deceleration below 15 km/h enters <code>Vehicle (Traffic Congestion)</code> state rather than <code>Walking</code>.
+          </p>
+        </div>
+
+        <!-- Geofence Sentinel -->
+        <div class="p-4 bg-white border border-slate-200 rounded-xl">
+          <div class="font-bold text-slate-900 text-sm mb-2">2. Geofence Sentinel &amp; Proximity Triggers</div>
+          <p class="text-slate-600 leading-relaxed mb-2">
+            Saved locations (Supermarkets, Landlord, Office) monitor spatial radii \(r \in [100\text{m}, 1500\text{m}]\). When proximity threshold \(d \le r\) evaluates to true:
+          </p>
+          <ul class="list-disc list-inside text-slate-600 space-y-1">
+            <li><strong>Budget Category Sentinel:</strong> Calculates remaining budget for that category and renders the global proximity alert banner.</li>
+            <li><strong>Payable Task Trigger:</strong> Generates a 1-click completion prompt to settle rent upon arrival at the landlord's office.</li>
+            <li><strong>Social IOU Settle Trigger:</strong> Prompts expense resolution when meeting a friend with an active balance.</li>
+          </ul>
+        </div>
+
+        <!-- Task Ledger Bridge -->
+        <div class="p-4 bg-white border border-slate-200 rounded-xl">
+          <div class="font-bold text-slate-900 text-sm mb-2">3. The Financial Task Bridge</div>
+          <p class="text-slate-600 leading-relaxed">
+            Tasks can be marked as <code class="inline-code">is_financial = true</code> with financial types:
+            <code>payable</code> (bills), <code>receivable</code> (invoices), or <code>budget_task</code>. Checking off a task does not merely toggle a visual checkbox—it atomically logs a transaction against the designated account and updates current balances.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SECTION 6: EDGE FUNCTIONS & MULTI-CURRENCY -->
+    <!-- ========================================== -->
+    <section id="sec-edge-functions" class="mb-12 page-break">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-mono text-xs font-bold flex items-center justify-center">06</span>
+        <h2 class="text-xl font-bold text-slate-900 tracking-tight">Edge Functions &amp; Multi-Currency Engine</h2>
+      </div>
+      <p class="text-sm text-slate-600 leading-relaxed mb-4">
+        The natural language parser is deployed as a Deno TypeScript Edge Function on Supabase (<code class="inline-code">supabase/functions/parse-transaction/index.ts</code>).
+      </p>
+
+      <div class="border border-slate-200 rounded-xl p-4 bg-slate-50/50 mb-6 avoid-break">
+        <h3 class="text-xs font-mono font-bold text-slate-700 uppercase mb-2">Parser API Contract</h3>
+        <pre><code>// POST https://&lt;project-ref&gt;.supabase.co/functions/v1/parse-transaction
+// Request Payload:
+{
+  "text": "Paid Rs 4,500 for weekly grocery run at Keells yesterday",
+  "baseCurrency": "LKR",
+  "categories": ["Groceries", "Dining Out", "Transportation", "Utilities", "Other"]
+}
+
+// Response JSON (HTTP 200):
+{
+  "amount": 4500,
+  "currency": "LKR",
+  "category": "Groceries",
+  "type": "expense",
+  "description": "Weekly grocery run at Keells",
+  "date": "2026-10-18",
+  "confidence": 0.98
+}</code></pre>
+      </div>
+
+      <div class="p-4 bg-white border border-slate-200 rounded-xl text-xs avoid-break">
+        <div class="font-bold text-slate-900 mb-1.5">Dynamic Currency Architecture</div>
+        <p class="text-slate-600 leading-relaxed">
+          Apex LifeOS has zero hardcoded currency symbols. The application dynamically resolves formatting, currency symbols, and precision across 40+ global currencies (USD <code>$</code>, LKR <code>Rs</code>, EUR <code>€</code>, GBP <code>£</code>, INR <code>₹</code>, JPY <code>¥</code>, CAD <code>CA$</code>, etc.) using the browser's native <code class="inline-code">Intl.NumberFormat</code> engine synchronized through the user's system preferences.
+        </p>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SECTION 7: ANDROID COMPANION TELEMETRY -->
+    <!-- ========================================== -->
+    <section id="sec-android" class="mb-12 page-break">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-mono text-xs font-bold flex items-center justify-center">07</span>
+        <h2 class="text-xl font-bold text-slate-900 tracking-tight">Android Companion Telemetry Subsystem</h2>
+      </div>
+      <p class="text-sm text-slate-600 leading-relaxed mb-4">
+        The Android companion app (<code class="inline-code">android-companion/</code>) runs as a persistent native Kotlin background daemon, continuously streaming mobility metrics to Supabase without requiring an active browser tab.
+      </p>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs avoid-break mb-6">
+        <div class="p-4 bg-white border border-slate-200 rounded-xl">
+          <div class="font-bold text-slate-900 mb-1.5 font-mono text-emerald-700">Service Architecture</div>
+          <ul class="list-disc list-inside text-slate-600 space-y-1">
+            <li><strong>Foreground Service:</strong> Ensures the OS does not terminate the telemetry service under memory pressure.</li>
+            <li><strong>FusedLocationProviderClient:</strong> High-precision GPS fixes with adaptive interval throttling.</li>
+            <li><strong>Battery Throttling:</strong> Dynamically backs off update frequency when the device is stationary.</li>
+            <li><strong>Offline SQLite Queue:</strong> Buffers pings locally if network connectivity drops.</li>
+          </ul>
+        </div>
+        <div class="p-4 bg-white border border-slate-200 rounded-xl">
+          <div class="font-bold text-slate-900 mb-1.5 font-mono text-emerald-700">Hardware Ping Payload Schema</div>
+          <pre class="text-[10px] p-2 mt-1"><code>{
+  "device_id": "Pixel_9_Pro_a7b8c9",
+  "device_name": "Pixel 9 Pro",
+  "latitude": 6.927079,
+  "longitude": 79.861244,
+  "accuracy_meters": 4.2,
+  "speed_kmh": 32.5,
+  "battery_level": 82.0,
+  "is_charging": false,
+  "transport_mode": "vehicle"
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SECTION 8: OPERATIONS & RUNBOOK -->
+    <!-- ========================================== -->
+    <section id="sec-ops" class="mb-10 page-break">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-mono text-xs font-bold flex items-center justify-center">08</span>
+        <h2 class="text-xl font-bold text-slate-900 tracking-tight">Deployment, CI/CD &amp; Operations Runbook</h2>
+      </div>
+      <p class="text-sm text-slate-600 leading-relaxed mb-4">
+        Commands and procedures for maintaining, testing, and deploying Apex LifeOS.
+      </p>
+
+      <div class="space-y-4 text-xs avoid-break">
+        <div class="p-4 bg-white border border-slate-200 rounded-xl">
+          <div class="font-bold text-slate-900 mb-2">Local Development Setup</div>
+          <pre><code># 1. Clone repository and install dependencies
+git clone https://github.com/layanpro123456/ai-finance-tracker.git
+cd ai-finance-tracker
+npm install
+
+# 2. Configure .env file
+VITE_SUPABASE_URL=https://&lt;project-ref&gt;.supabase.co
+VITE_SUPABASE_ANON_KEY=&lt;your-anon-public-key&gt;
+
+# 3. Start development server
+npm run dev</code></pre>
+        </div>
+
+        <div class="p-4 bg-white border border-slate-200 rounded-xl">
+          <div class="font-bold text-slate-900 mb-2">Automated Quality Invariants &amp; Build Verification</div>
+          <pre><code># Static analysis and linting (Oxlint)
+npm run lint
+
+# TypeScript compilation and production packaging
+npm run build
+
+# Generate Technical PDF Documentation
+npm run docs:pdf</code></pre>
+        </div>
+
+        <div class="p-4 bg-slate-900 text-slate-200 rounded-xl border border-slate-800">
+          <div class="text-xs font-mono font-bold text-emerald-400 mb-1">CI/CD Automation Pipelines (.github/workflows/)</div>
+          <p class="text-slate-400 text-xs">
+            - <code class="text-slate-200">deploy.yml</code>: Triggers on push to <code>main</code>, executes <code>npm run build</code>, and publishes production SPA bundle to GitHub Pages.<br>
+            - <code class="text-slate-200">build-tracker-apk.yml</code>: Sets up Java 17 + Android SDK, builds debug and release APKs for the Kotlin telemetry companion.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sign-off Footer -->
+    <div class="mt-12 pt-6 border-t border-slate-200 flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-500">
+      <div>Apex LifeOS Technical Blueprint • Architecture &amp; Engineering</div>
+      <div>Authored for Engineering &amp; Operations Teams</div>
+    </div>
+
+  </div>
+
+</body>
+</html>
