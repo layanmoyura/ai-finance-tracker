@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import type { PlatformUserSummary, PlatformActivityLog, ActivityEventType } from '../types';
+import type { PlatformUserSummary, PlatformActivityLog, ActivityEventType, Account, Transaction, UserDeviceSession } from '../types';
+import { supabase } from '../supabaseClient';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -10,6 +11,7 @@ import {
   RefreshCw,
   Download,
   Lock,
+  Unlock,
   Laptop,
   CheckCircle2,
   Clock,
@@ -24,12 +26,17 @@ import {
   Loader2,
   HardDrive,
   Globe,
+  Smartphone,
+  Calendar,
+  ArrowDownLeft,
+  ArrowUpRight,
 } from 'lucide-react';
 import {
   getPlatformUsers,
   getPlatformActivityLogs,
   setAdminSession,
   isAuthorizedAdmin,
+  logPlatformEvent,
 } from '../services/adminTelemetry';
 import {
   purgeAllDatabaseData,
@@ -37,6 +44,19 @@ import {
   type DatabaseDiagnostics,
   type DatabaseRefreshReport,
 } from '../services/databaseAdminService';
+import {
+  isDeviceLockDisabled,
+  setDeviceLockDisabled,
+  isUserDeviceLockDisabled,
+  setUserDeviceLockDisabled,
+  clearUserDeviceSession,
+  getUserDeviceSession,
+} from '../services/deviceSessionService';
+import {
+  undoAccountTransaction,
+  previewTransactionUndo,
+  type UndoPreview,
+} from '../services/transactionUndoService';
 
 interface AdminPortalProps {
   currentUserId?: string;
@@ -47,6 +67,8 @@ interface AdminPortalProps {
     tasksCount: number;
     subsCount: number;
   };
+  accounts?: Account[];
+  transactions?: Transaction[];
   onLockSession: () => void;
   onRefreshDatabase?: () => Promise<void> | void;
 }
@@ -57,6 +79,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   currentUserId,
   currentUserEmail,
   userStats,
+  accounts: propAccounts = [],
+  transactions: propTransactions = [],
   onLockSession,
   onRefreshDatabase,
 }) => {
@@ -67,6 +91,173 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [activityTypeFilter, setActivityTypeFilter] = useState<ActivityEventType | 'ALL'>('ALL');
   const [selectedUser, setSelectedUser] = useState<PlatformUserSummary | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Device Lock State (Admin Governance)
+  const [isDeviceLockDisabledState, setIsDeviceLockDisabledState] = useState<boolean>(() =>
+    isDeviceLockDisabled()
+  );
+
+  useEffect(() => {
+    const handleLockChange = () => {
+      setIsDeviceLockDisabledState(isDeviceLockDisabled());
+    };
+    window.addEventListener('apex_device_lock_changed', handleLockChange);
+    window.addEventListener('storage', handleLockChange);
+    return () => {
+      window.removeEventListener('apex_device_lock_changed', handleLockChange);
+      window.removeEventListener('storage', handleLockChange);
+    };
+  }, []);
+
+  const handleToggleDeviceLock = () => {
+    const next = !isDeviceLockDisabledState;
+    setDeviceLockDisabled(next);
+    setIsDeviceLockDisabledState(next);
+    logPlatformEvent(
+      'SECURITY',
+      next
+        ? 'Admin disabled hardware sentinel device lock (multi-device logins permitted)'
+        : 'Admin enabled hardware sentinel device lock (strict 1-device enforcement active)',
+      currentUserId,
+      currentUserEmail
+    );
+  };
+
+  // User Inspector State (Accounts, Transactions & Device Sessions)
+  const [selectedUserAccounts, setSelectedUserAccounts] = useState<Account[]>([]);
+  const [selectedUserTransactions, setSelectedUserTransactions] = useState<Transaction[]>([]);
+  const [selectedUserDeviceSession, setSelectedUserDeviceSession] = useState<UserDeviceSession | null>(null);
+  const [selectedUserLockDisabled, setSelectedUserLockDisabled] = useState(false);
+  const [isLoadingUserDetails, setIsLoadingUserDetails] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<'profile' | 'device' | 'accounts' | 'transactions'>('profile');
+  const [inspectorTxSearch, setInspectorTxSearch] = useState('');
+
+  // Admin Transaction Undo State
+  const [adminUndoTarget, setAdminUndoTarget] = useState<Transaction | null>(null);
+  const [adminUndoPreview, setAdminUndoPreview] = useState<UndoPreview | null>(null);
+  const [isAdminUndoing, setIsAdminUndoing] = useState(false);
+  const [adminUndoFeedback, setAdminUndoFeedback] = useState<string | null>(null);
+
+  const loadUserDetails = useCallback(async (user: PlatformUserSummary) => {
+    setIsLoadingUserDetails(true);
+    setAdminUndoFeedback(null);
+    setAdminUndoTarget(null);
+    setAdminUndoPreview(null);
+    try {
+      // 1. Fetch user device session
+      const session = await getUserDeviceSession(user.id);
+      setSelectedUserDeviceSession(session);
+      setSelectedUserLockDisabled(isUserDeviceLockDisabled(user.id));
+
+      // 2. Fetch accounts
+      if (user.id === currentUserId && propAccounts.length > 0) {
+        setSelectedUserAccounts(propAccounts);
+      } else {
+        const { data: accData } = await supabase
+          .from('accounts')
+          .select('*')
+          .eq('user_id', user.id);
+        setSelectedUserAccounts(accData || []);
+      }
+
+      // 3. Fetch transactions
+      if (user.id === currentUserId && propTransactions.length > 0) {
+        setSelectedUserTransactions(propTransactions);
+      } else {
+        const { data: txData } = await supabase
+          .from('transactions')
+          .select('*, accounts(name, currency), categories(name)')
+          .eq('user_id', user.id)
+          .order('transaction_date', { ascending: false });
+        setSelectedUserTransactions((txData as Transaction[]) || []);
+      }
+    } catch (err) {
+      console.warn('Error loading user inspection details:', err);
+    } finally {
+      setIsLoadingUserDetails(false);
+    }
+  }, [currentUserId, propAccounts, propTransactions]);
+
+  useEffect(() => {
+    if (selectedUser) {
+      loadUserDetails(selectedUser);
+    }
+  }, [selectedUser, loadUserDetails]);
+
+  const handleReleaseUserDeviceLock = async () => {
+    if (!selectedUser) return;
+    try {
+      await clearUserDeviceSession(selectedUser.id);
+      setSelectedUserDeviceSession(null);
+      logPlatformEvent(
+        'SECURITY',
+        `Admin released hardware device lock for user ${selectedUser.maskedId}`,
+        currentUserId,
+        currentUserEmail
+      );
+      setAdminUndoFeedback('Hardware device lock successfully cleared. User may authenticate from any terminal.');
+    } catch {
+      alert('Failed to release device session');
+    }
+  };
+
+  const handleToggleUserDeviceLock = () => {
+    if (!selectedUser) return;
+    const next = !selectedUserLockDisabled;
+    setUserDeviceLockDisabled(selectedUser.id, next);
+    setSelectedUserLockDisabled(next);
+    logPlatformEvent(
+      'SECURITY',
+      next
+        ? `Admin disabled device lock enforcement for user ${selectedUser.maskedId}`
+        : `Admin enabled device lock enforcement for user ${selectedUser.maskedId}`,
+      currentUserId,
+      currentUserEmail
+    );
+    setAdminUndoFeedback(
+      next
+        ? 'Device lock disabled for this user. Concurrent multi-device logins are now allowed.'
+        : 'Single-device lock re-enforced for this user.'
+    );
+  };
+
+  const handleAdminInitiateUndo = (tx: Transaction) => {
+    const acc = selectedUserAccounts.find((a) => a.id === tx.account_id);
+    const curBal = acc ? Number(acc.balance) : 0;
+    const preview = previewTransactionUndo(tx, curBal);
+    setAdminUndoTarget(tx);
+    setAdminUndoPreview(preview);
+  };
+
+  const handleAdminConfirmUndo = async () => {
+    if (!adminUndoTarget || !selectedUser) return;
+    setIsAdminUndoing(true);
+    try {
+      const acc = selectedUserAccounts.find((a) => a.id === adminUndoTarget.account_id);
+      const res = await undoAccountTransaction(adminUndoTarget, acc, {
+        userId: currentUserId,
+        userEmail: currentUserEmail,
+        isAdminAction: true,
+      });
+
+      setAdminUndoFeedback(res.message);
+      setAdminUndoTarget(null);
+      setAdminUndoPreview(null);
+
+      // Refresh inspector details
+      await loadUserDetails(selectedUser);
+
+      // Trigger parent refresh
+      if (onRefreshDatabase) {
+        await onRefreshDatabase();
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Admin undo failed';
+      alert(msg);
+    } finally {
+      setIsAdminUndoing(false);
+    }
+  };
 
   // Load telemetry data
   const [users, setUsers] = useState<PlatformUserSummary[]>(() =>
@@ -264,6 +455,34 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             >
               <Download className="w-3.5 h-3.5" />
               <span>Export Audit</span>
+            </button>
+
+            <button
+              onClick={handleToggleDeviceLock}
+              title={
+                isDeviceLockDisabledState
+                  ? 'Device lock is currently DISABLED (Multi-device concurrent logins allowed). Click to re-enable single-device lock.'
+                  : 'Device lock is currently ENFORCED (Single device per user). Click to disable lock.'
+              }
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border ${
+                isDeviceLockDisabledState
+                  ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+                  : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+              }`}
+            >
+              {isDeviceLockDisabledState ? (
+                <>
+                  <Unlock className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Device Lock: Disabled</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 ml-1">Enable</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Device Lock: Enforced</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-200 ml-1">Disable</span>
+                </>
+              )}
             </button>
 
             <button
@@ -477,6 +696,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <th className="py-3 px-3">User Identifier</th>
                   <th className="py-3 px-3">Role</th>
                   <th className="py-3 px-3">Status</th>
+                  <th className="py-3 px-3">Device Lock</th>
                   <th className="py-3 px-3">Joined Date</th>
                   <th className="py-3 px-3">Last Active</th>
                   <th className="py-3 px-3 text-center">Activity Volume</th>
@@ -486,7 +706,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <tbody className="divide-y divide-slate-850">
                 {filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-slate-500">
+                    <td colSpan={8} className="text-center py-8 text-slate-500">
                       No users found matching &ldquo;{searchQuery}&rdquo;.
                     </td>
                   </tr>
@@ -535,6 +755,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                           />
                           <span className="capitalize">{u.status}</span>
                         </span>
+                      </td>
+                      <td className="py-3.5 px-3">
+                        {isDeviceLockDisabledState || isUserDeviceLockDisabled(u.id) ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[10px] font-semibold">
+                            <Unlock className="w-3 h-3 text-amber-400" />
+                            <span>Disabled</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold">
+                            <Lock className="w-3 h-3 text-emerald-400" />
+                            <span>Enforced</span>
+                          </span>
+                        )}
                       </td>
                       <td className="py-3.5 px-3 text-slate-300 font-mono text-[11px]">{u.joinedDate}</td>
                       <td className="py-3.5 px-3 text-slate-400 flex items-center gap-1 mt-1 text-[11px]">
@@ -911,6 +1144,66 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </p>
           </div>
 
+          {/* Admin Device Lock Control Banner */}
+          <div className="p-6 rounded-3xl bg-slate-950 border border-slate-800 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Laptop className="w-5 h-5 text-purple-400" />
+                  <h4 className="text-sm font-bold text-white">Hardware Sentinel &amp; Single-Device Lock</h4>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                      isDeviceLockDisabledState
+                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                        : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                    }`}
+                  >
+                    {isDeviceLockDisabledState ? 'Lock Disabled (Multi-Device Active)' : 'Lock Enforced (1 Active Device)'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                  Cryptographic Web Crypto UUID binding each account to a single physical device terminal to prevent session hijacking and concurrent conflicting mutations.
+                </p>
+              </div>
+
+              <button
+                onClick={handleToggleDeviceLock}
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer border shadow-lg ${
+                  isDeviceLockDisabledState
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 shadow-emerald-600/20'
+                    : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30 shadow-amber-500/10'
+                }`}
+              >
+                {isDeviceLockDisabledState ? (
+                  <>
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Re-Enable Device Lock</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldAlert className="w-4 h-4" />
+                    <span>Disable Device Lock (Allow Multi-Device)</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-[11px] text-slate-300 leading-relaxed flex items-start gap-2.5">
+              <AlertTriangle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${isDeviceLockDisabledState ? 'text-amber-400' : 'text-slate-500'}`} />
+              <div>
+                {isDeviceLockDisabledState ? (
+                  <span>
+                    <strong className="text-amber-300 font-semibold">Multi-Device Access Is Unrestricted:</strong> All platform accounts can log into multiple browsers, mobile phones, and Android companions without encountering session conflict modals or receiving automated kickouts.
+                  </span>
+                ) : (
+                  <span>
+                    <strong className="text-emerald-300 font-semibold">Strict Single-Device Policy Active:</strong> Logging into a second physical device will trigger the hardware collision sentinel, requiring the user to explicitly authenticate a session transfer.
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
               <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
@@ -958,10 +1251,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       {/* User Detail Inspector Modal */}
       {selectedUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl relative">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl relative overflow-hidden">
+            {/* Modal Header */}
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white font-bold flex items-center justify-center text-sm">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 text-white font-bold flex items-center justify-center text-sm shadow-md">
                   {selectedUser.email.charAt(0).toUpperCase()}
                 </div>
                 <div>
@@ -969,74 +1263,438 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <p className="text-[11px] font-mono text-slate-400">{selectedUser.maskedId}</p>
                 </div>
               </div>
+
               <button
-                onClick={() => setSelectedUser(null)}
+                onClick={() => {
+                  setSelectedUser(null);
+                  setAdminUndoFeedback(null);
+                  setAdminUndoTarget(null);
+                  setAdminUndoPreview(null);
+                }}
                 className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="py-5 space-y-4 text-xs">
-              <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl text-purple-300 text-[11px] flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 flex-shrink-0 text-purple-400" />
-                <span>Privacy Notice: Personal financial figures and private notes are withheld.</span>
-              </div>
+            {/* Inspector Navigation Tabs */}
+            <div className="flex items-center gap-2 pt-3 pb-2 border-b border-slate-850">
+              <button
+                onClick={() => setInspectorTab('profile')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                  inspectorTab === 'profile'
+                    ? 'bg-purple-600 text-white shadow-md'
+                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Profile &amp; Footprint</span>
+              </button>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">Role</span>
-                  <span className="text-white font-bold capitalize">{selectedUser.role}</span>
-                </div>
-                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">Status</span>
-                  <span className="text-emerald-400 font-bold capitalize">{selectedUser.status}</span>
-                </div>
-                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">Registration Date</span>
-                  <span className="text-white font-mono">{selectedUser.joinedDate}</span>
-                </div>
-                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">Last Active</span>
-                  <span className="text-white">{selectedUser.lastActive}</span>
-                </div>
-              </div>
+              <button
+                onClick={() => setInspectorTab('device')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                  inspectorTab === 'device'
+                    ? 'bg-purple-600 text-white shadow-md'
+                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Hardware Device Lock</span>
+                {selectedUserLockDisabled && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                )}
+              </button>
 
-              <div className="space-y-2 pt-2 border-t border-slate-800">
-                <span className="font-semibold text-slate-300 block">Platform Operational Footprint</span>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">
-                    <span className="text-white font-bold block">{selectedUser.totalTransactions}</span>
-                    <span className="text-[10px] text-slate-500">Transactions</span>
-                  </div>
-                  <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">
-                    <span className="text-white font-bold block">{selectedUser.totalTasks}</span>
-                    <span className="text-[10px] text-slate-500">Tasks</span>
-                  </div>
-                  <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">
-                    <span className="text-white font-bold block">{selectedUser.totalSubscriptions}</span>
-                    <span className="text-[10px] text-slate-500">Subscriptions</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">AI Assistant Adoption Rate</span>
-                  <span className="text-amber-400 font-bold">{selectedUser.aiUsageRate}%</span>
-                </div>
-                <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                  <div
-                    className="bg-amber-400 h-full rounded-full transition-all"
-                    style={{ width: `${selectedUser.aiUsageRate}%` }}
-                  />
-                </div>
-              </div>
+              <button
+                onClick={() => setInspectorTab('transactions')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                  inspectorTab === 'transactions'
+                    ? 'bg-purple-600 text-white shadow-md'
+                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Ledger &amp; Undo Txs ({selectedUserTransactions.length})</span>
+              </button>
             </div>
 
+            {/* Modal Body */}
+            <div className="py-4 space-y-4 text-xs flex-1 overflow-y-auto">
+              {/* Feedback Alert */}
+              {adminUndoFeedback && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <span>{adminUndoFeedback}</span>
+                  </div>
+                  <button
+                    onClick={() => setAdminUndoFeedback(null)}
+                    className="text-slate-400 hover:text-white text-[11px]"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
+              {/* Active Admin Undo Confirmation Banner */}
+              {adminUndoTarget && adminUndoPreview && (
+                <div className="p-4 rounded-2xl bg-purple-950/40 border border-purple-500/30 text-xs space-y-3 animate-fadeIn">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-bold text-purple-300 text-sm">
+                      <RotateCcw className="w-4 h-4 text-purple-400" />
+                      <span>Admin Transaction Undo Confirmation</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setAdminUndoTarget(null);
+                        setAdminUndoPreview(null);
+                      }}
+                      className="text-slate-400 hover:text-white text-xs cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                      <span className="text-slate-500 block text-[10px] uppercase font-semibold">Transaction</span>
+                      <span className="text-white font-semibold truncate block">{adminUndoTarget.description}</span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                      <span className="text-slate-500 block text-[10px] uppercase font-semibold">Type</span>
+                      <span className={`font-bold capitalize ${adminUndoTarget.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {adminUndoTarget.type}
+                      </span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                      <span className="text-slate-500 block text-[10px] uppercase font-semibold">Previous Balance</span>
+                      <span className="text-slate-300 font-mono font-bold">
+                        ${adminUndoPreview.previousBalance.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-950 border border-purple-500/40">
+                      <span className="text-purple-400 block text-[10px] uppercase font-semibold">Resulting Balance</span>
+                      <span className="text-white font-mono font-bold">
+                        ${adminUndoPreview.projectedBalance.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    {adminUndoPreview.actionDescription}. The transaction entry will be removed from this user&apos;s ledger and related ERP references unlinked.
+                  </p>
+
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      disabled={isAdminUndoing}
+                      onClick={() => {
+                        setAdminUndoTarget(null);
+                        setAdminUndoPreview(null);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer text-xs"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isAdminUndoing}
+                      onClick={handleAdminConfirmUndo}
+                      className="px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-purple-600/20 text-xs"
+                    >
+                      {isAdminUndoing ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      )}
+                      <span>Execute Admin Undo</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 1: Profile & Operational Footprint */}
+              {inspectorTab === 'profile' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                      <span className="text-slate-500 block text-[10px] uppercase font-semibold">Role</span>
+                      <span className="text-white font-bold capitalize">{selectedUser.role}</span>
+                    </div>
+                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                      <span className="text-slate-500 block text-[10px] uppercase font-semibold">Status</span>
+                      <span className="text-emerald-400 font-bold capitalize">{selectedUser.status}</span>
+                    </div>
+                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                      <span className="text-slate-500 block text-[10px] uppercase font-semibold">Joined</span>
+                      <span className="text-white font-mono">{selectedUser.joinedDate}</span>
+                    </div>
+                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                      <span className="text-slate-500 block text-[10px] uppercase font-semibold">Last Active</span>
+                      <span className="text-white truncate block">{selectedUser.lastActive}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-slate-800">
+                    <span className="font-semibold text-slate-300 block">Platform Operational Footprint</span>
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">
+                        <span className="text-white font-bold block">{selectedUserAccounts.length}</span>
+                        <span className="text-[10px] text-slate-500">Accounts</span>
+                      </div>
+                      <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">
+                        <span className="text-white font-bold block">{selectedUserTransactions.length}</span>
+                        <span className="text-[10px] text-slate-500">Transactions</span>
+                      </div>
+                      <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">
+                        <span className="text-white font-bold block">{selectedUser.totalTasks}</span>
+                        <span className="text-[10px] text-slate-500">Tasks</span>
+                      </div>
+                      <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">
+                        <span className="text-white font-bold block">{selectedUser.totalSubscriptions}</span>
+                        <span className="text-[10px] text-slate-500">Subscriptions</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">AI Assistant Adoption Rate</span>
+                      <span className="text-amber-400 font-bold">{selectedUser.aiUsageRate}%</span>
+                    </div>
+                    <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                      <div
+                        className="bg-amber-400 h-full rounded-full transition-all"
+                        style={{ width: `${selectedUser.aiUsageRate}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: Hardware Device Lock & Session Sentinel */}
+              {inspectorTab === 'device' && (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Laptop className="w-4 h-4 text-purple-400" />
+                        <h4 className="font-bold text-white text-xs">Active Physical Device Binding</h4>
+                      </div>
+                      {isDeviceLockDisabledState || selectedUserLockDisabled ? (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                          Lock Disabled
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                          Lock Active
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
+                      <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                        <span className="text-[10px] text-slate-500 uppercase font-semibold block">Terminal Name</span>
+                        <span className="font-semibold text-white block truncate">
+                          {selectedUserDeviceSession?.device_name || 'No Active Hardware Bound'}
+                        </span>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                        <span className="text-[10px] text-slate-500 uppercase font-semibold block">Platform</span>
+                        <span className="font-semibold text-purple-300 block capitalize">
+                          {selectedUserDeviceSession?.platform || 'web'}
+                        </span>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                        <span className="text-[10px] text-slate-500 uppercase font-semibold block">Hardware UUID</span>
+                        <span className="font-mono text-[10px] text-slate-400 block truncate">
+                          {selectedUserDeviceSession?.active_device_id || 'None registered'}
+                        </span>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                        <span className="text-[10px] text-slate-500 uppercase font-semibold block">Last Active Ping</span>
+                        <span className="text-[10px] text-slate-300 block truncate">
+                          {selectedUserDeviceSession?.last_active_at || 'Never'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={handleReleaseUserDeviceLock}
+                        className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                        title="Release this user's active device lock session to resolve terminal lockouts"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Release Active Device Lock</span>
+                      </button>
+
+                      <button
+                        onClick={handleToggleUserDeviceLock}
+                        className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer border ${
+                          selectedUserLockDisabled
+                            ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                            : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+                        }`}
+                        title="Toggle single-device lock exemption for this user"
+                      >
+                        {selectedUserLockDisabled ? (
+                          <>
+                            <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Re-Enforce Device Lock</span>
+                          </>
+                        ) : (
+                          <>
+                            <Unlock className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Disable Lock for This User</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: Accounts & Transaction-Wise Undo */}
+              {inspectorTab === 'transactions' && (
+                <div className="space-y-4">
+                  {/* User Accounts Overview */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">
+                      User Accounts ({selectedUserAccounts.length})
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {selectedUserAccounts.map((acc) => (
+                        <div key={acc.id} className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                          <span className="font-semibold text-white truncate block text-xs">{acc.name}</span>
+                          <span className="text-slate-500 text-[10px] font-mono block">{acc.currency}</span>
+                          <span className="text-emerald-400 font-bold text-xs mt-0.5 block">
+                            ${Number(acc.balance).toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Transaction Search & Filter */}
+                  <div className="pt-2 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">
+                        Transactions Ledger ({selectedUserTransactions.length}) &bull; Transaction-Wise Undo
+                      </span>
+                    </div>
+
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Search transactions to undo..."
+                        value={inspectorTxSearch}
+                        onChange={(e) => setInspectorTxSearch(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Transactions List */}
+                  {isLoadingUserDetails ? (
+                    <div className="text-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin text-purple-400 mx-auto" />
+                      <span className="text-xs text-slate-400 mt-2 block">Loading ledger records...</span>
+                    </div>
+                  ) : selectedUserTransactions.length === 0 ? (
+                    <div className="text-center py-8 border border-dashed border-slate-800 rounded-xl text-slate-500 text-xs">
+                      No transactions recorded for this user.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-800/80 max-h-60 overflow-y-auto">
+                      {selectedUserTransactions
+                        .filter((tx) => {
+                          if (!inspectorTxSearch.trim()) return true;
+                          const q = inspectorTxSearch.toLowerCase();
+                          return (
+                            tx.description?.toLowerCase().includes(q) ||
+                            tx.raw_prompt?.toLowerCase().includes(q)
+                          );
+                        })
+                        .map((tx) => {
+                          const isIncome = tx.type === 'income';
+                          const acc = selectedUserAccounts.find((a) => a.id === tx.account_id);
+                          const accountName = acc?.name || tx.accounts?.name || 'Account';
+
+                          return (
+                            <div
+                              key={tx.id}
+                              className="py-2.5 flex items-center justify-between gap-3 hover:bg-slate-850/40 px-2 rounded-xl transition"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div
+                                  className={`p-1.5 rounded-lg flex-shrink-0 ${
+                                    isIncome
+                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                      : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                                  }`}
+                                >
+                                  {isIncome ? (
+                                    <ArrowDownLeft className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <ArrowUpRight className="w-3.5 h-3.5" />
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-white text-xs truncate">
+                                      {tx.description || 'Transaction'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
+                                    <span>{accountName}</span>
+                                    <span>&bull;</span>
+                                    <span className="flex items-center gap-1 text-slate-400">
+                                      <Calendar className="w-2.5 h-2.5 text-slate-500" />
+                                      <span>{tx.transaction_date}</span>
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-3 flex-shrink-0">
+                                <span
+                                  className={`font-bold text-xs font-mono ${
+                                    isIncome ? 'text-emerald-400' : 'text-rose-400'
+                                  }`}
+                                >
+                                  {isIncome ? '+' : '-'}${Number(tx.amount).toFixed(2)}
+                                </span>
+
+                                <button
+                                  onClick={() => handleAdminInitiateUndo(tx)}
+                                  className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/25 text-[10px] font-semibold flex items-center gap-1 transition cursor-pointer"
+                                  title={`Admin Undo: Revert transaction and balance on ${accountName}`}
+                                >
+                                  <RotateCcw className="w-3 h-3 text-rose-400" />
+                                  <span>Undo</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
             <div className="flex justify-end pt-3 border-t border-slate-800">
               <button
-                onClick={() => setSelectedUser(null)}
+                onClick={() => {
+                  setSelectedUser(null);
+                  setAdminUndoFeedback(null);
+                  setAdminUndoTarget(null);
+                  setAdminUndoPreview(null);
+                }}
                 className="px-4 py-2 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition cursor-pointer"
               >
                 Close Inspector

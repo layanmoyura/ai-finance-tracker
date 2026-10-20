@@ -36,16 +36,16 @@ Most finance apps operate in isolation—they only track historical debits and c
 | **Location & Timeline** | GPS velocity gauge, commute legs, dwell stops, and traffic-resilient transit detection | Haversine formula + traffic hysteresis + Route Simulator |
 | **Android Tracker APK** | Dedicated native Android background location beacon with Fused Location Provider, Room offline queue, and direct Supabase streaming | Eliminates mobile browser background sleep/Doze throttling; Zero-Exposure QR pairing, 1-tap encrypted token exchange, Keystore AES-256 storage, and zero manual parameter exposure |
 | **Geofenced Places** | Saved waypoints with proximity radii triggering contextual payment alerts on arrival | Integrated with Budgets, Tasks & IOUs; responsive top proximity banner |
-| **Financial Accounts** | Multi-account balance sheets (Checking, Savings, Cash, Credit Card) | Strict `0.00` starting balance policy; zero hallucinated funds |
+| **Financial Accounts** | Multi-account balance sheets (Checking, Savings, Cash, Credit Card) & transaction-wise undo | Strict `0.00` starting balance policy; account ledger & instant transaction-wise undo |
 | **Cash & ATM Vault** | In-hand physical cash wallet tracking, 1-click ATM withdrawals with bank auto-transfer, voice cash logging, and bill audits | Dedicated cash wallet balance, voice dictation, petty cash logging, and physical wallet reconciliation |
 | **Category Budgets** | Monthly category caps with interactive visual spending gauges | Progress tracking and over-budget warnings |
 | **Asset Vault** | Fixed assets (electronics, vehicles, tools) feeding into Net Worth | Purchase price, current value, and warranty expiration countdowns |
 | **Subscriptions** | Monthly & annual recurring commitments with renewal countdown | Active account links, direct cancellation URLs to prevent subscription creep |
 | **Social Ledger & Split** | P2P debt tracking and group bill splitter with equal/exact/% modes and instant payment links (UPI, Venmo, PayPal, CashApp) | 1-Click settlement and direct ledger sync without requiring friends to install the app |
 | **Two-Row Navigation** | Row 1 (Identity & System Controls) + Row 2 (10-Module Tab Ribbon) | Auto-scroll centering, gradient overflow fade masks, and mobile slide-over drawer |
-| **Strict Admin Portal** | Platform telemetry, audit logs, and 1-click database refresh | Restricted strictly to `layanmoyura@proton.me`; discrete `Ctrl+Shift+A` / `#admin` access |
+| **Strict Admin Portal** | Platform telemetry, audit logs, 1-click database refresh, device lock toggle & user transaction undo | Restricted strictly to `layanmoyura@proton.me`; discrete `Ctrl+Shift+A` / `#admin` access; user ledger inspection & undo |
 | **Zero-Data DB Purge** | 1-Click platform/workspace database purge across all 13 tables | Resets accounts to `0.00`, wipes stale `localStorage`, and preserves user auth accounts |
-| **Device Sentinel** | Single active device login enforcement & device-bound location telemetry isolation | Hardware UUID, session takeover guard, and continuous heartbeat sentinel |
+| **Device Sentinel** | Single active device login enforcement with admin disable option & hardware session release | Hardware UUID, session takeover guard, admin lock disable toggle, and continuous heartbeat sentinel |
 | **Help & Guide** | Comprehensive user-facing tutorial with step-by-step interactive instructions | Mobile swipeable chapter navigator, non-technical instructions |
 | **Module Reset Controls**| Independent 1-click Reset button per subsystem with confirmation dialogs | In-place deletion and calibration for all individual modules |
 | **Clean Auth & SPA Router** | Dynamic URL redirection, token param sanitation, and GitHub Pages 404 SPA fallback | Eliminates 404s after clicking email verify link, cleans address bar codes, and auto-registers device sessions |

@@ -5,7 +5,6 @@ import { usePreferences } from '../context/PreferencesContext';
 import {
   Receipt,
   Search,
-  Trash2,
   Plus,
   Sparkles,
   ArrowDownLeft,
@@ -14,11 +13,14 @@ import {
   X,
   Loader2,
   RotateCcw,
+  CheckCircle2,
 } from 'lucide-react';
 import { CurrencyLogo } from './CurrencyLogo';
+import { undoAccountTransaction, previewTransactionUndo, type UndoPreview } from '../services/transactionUndoService';
 
 interface TransactionListProps {
   userId: string;
+  userEmail?: string;
   transactions: Transaction[];
   accounts: Account[];
   categories: Category[];
@@ -27,6 +29,7 @@ interface TransactionListProps {
 
 export const TransactionList: React.FC<TransactionListProps> = ({
   userId,
+  userEmail,
   transactions,
   accounts,
   categories,
@@ -46,6 +49,12 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   const [manualDate, setManualDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [isSubmittingManual, setIsSubmittingManual] = useState(false);
 
+  // Undo transaction state
+  const [undoTargetTx, setUndoTargetTx] = useState<Transaction | null>(null);
+  const [undoPreview, setUndoPreview] = useState<UndoPreview | null>(null);
+  const [isUndoing, setIsUndoing] = useState(false);
+  const [undoFeedback, setUndoFeedback] = useState<string | null>(null);
+
   const filteredTransactions = transactions.filter((t) => {
     if (filterType !== 'all' && t.type !== filterType) return false;
     if (selectedCategoryFilter !== 'all' && t.category_id !== selectedCategoryFilter) return false;
@@ -58,27 +67,36 @@ export const TransactionList: React.FC<TransactionListProps> = ({
     return true;
   });
 
-  const handleDelete = async (t: Transaction) => {
-    if (!window.confirm(`Delete "${t.description}"?`)) return;
+  const handleInitiateUndo = (t: Transaction) => {
+    const account = accounts.find((a) => a.id === t.account_id);
+    const currentBal = account ? Number(account.balance) : 0;
+    const preview = previewTransactionUndo(t, currentBal);
+    setUndoTargetTx(t);
+    setUndoPreview(preview);
+    setUndoFeedback(null);
+  };
 
+  const handleConfirmUndo = async () => {
+    if (!undoTargetTx) return;
+
+    setIsUndoing(true);
     try {
-      // 1. Delete transaction
-      const { error: delError } = await supabase.from('transactions').delete().eq('id', t.id);
-      if (delError) throw delError;
+      const account = accounts.find((a) => a.id === undoTargetTx.account_id);
+      const res = await undoAccountTransaction(undoTargetTx, account, {
+        userId,
+        userEmail,
+        isAdminAction: false,
+      });
 
-      // 2. Reverse account balance
-      const account = accounts.find((a) => a.id === t.account_id);
-      if (account) {
-        // If it was income, deleting it reduces balance. If it was expense, deleting it increases balance.
-        const delta = t.type === 'income' ? -Number(t.amount) : Number(t.amount);
-        const newBalance = Number(account.balance) + delta;
-        await supabase.from('accounts').update({ balance: newBalance }).eq('id', t.account_id);
-      }
-
+      setUndoFeedback(res.message);
+      setUndoTargetTx(null);
+      setUndoPreview(null);
       onTransactionsUpdated();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to delete transaction';
+      const msg = err instanceof Error ? err.message : 'Failed to undo transaction';
       alert(msg);
+    } finally {
+      setIsUndoing(false);
     }
   };
 
@@ -161,7 +179,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           <div>
             <h2 className="text-lg font-bold text-white tracking-tight">Transaction History</h2>
             <p className="text-xs text-slate-400">
-              {transactions.length} total entries recorded
+              {transactions.length} total entries recorded &bull; Undo transactions transaction-wise
             </p>
           </div>
         </div>
@@ -198,6 +216,97 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Undo Feedback Notice */}
+      {undoFeedback && (
+        <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <span>{undoFeedback}</span>
+          </div>
+          <button
+            onClick={() => setUndoFeedback(null)}
+            className="text-slate-400 hover:text-white text-[11px]"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Active Undo Confirmation Banner */}
+      {undoTargetTx && undoPreview && (
+        <div className="mb-5 p-4 rounded-2xl bg-purple-950/40 border border-purple-500/30 text-xs space-y-3 animate-fadeIn">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 font-bold text-purple-300 text-sm">
+              <RotateCcw className="w-4 h-4 text-purple-400" />
+              <span>Undo Transaction &bull; Balance Reversal Confirmation</span>
+            </div>
+            <button
+              onClick={() => {
+                setUndoTargetTx(null);
+                setUndoPreview(null);
+              }}
+              className="text-slate-400 hover:text-white text-xs cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Description</span>
+              <span className="text-white font-semibold truncate block">{undoTargetTx.description}</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Account</span>
+              <span className="text-white font-semibold truncate block">{undoTargetTx.accounts?.name || 'Account'}</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Current Balance</span>
+              <span className="text-slate-300 font-mono font-bold">
+                {formatCurrency(undoPreview.previousBalance)}
+              </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-950 border border-purple-500/40">
+              <span className="text-purple-400 block text-[10px] uppercase font-semibold">Resulting Balance</span>
+              <span className="text-white font-mono font-bold">
+                {formatCurrency(undoPreview.projectedBalance)}
+              </span>
+            </div>
+          </div>
+
+          <p className="text-slate-300 text-[11px]">
+            {undoPreview.actionDescription}. The transaction will be removed from your ledger and associated ERP links cleared.
+          </p>
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              disabled={isUndoing}
+              onClick={() => {
+                setUndoTargetTx(null);
+                setUndoPreview(null);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer text-xs"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={isUndoing}
+              onClick={handleConfirmUndo}
+              className="px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-purple-600/20 text-xs"
+            >
+              {isUndoing ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RotateCcw className="w-3.5 h-3.5" />
+              )}
+              <span>Confirm &amp; Revert Balance</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Filter and search bar */}
       <div className="flex flex-col md:flex-row gap-3 mb-5">
@@ -326,7 +435,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 flex-shrink-0">
+                <div className="flex items-center gap-3 flex-shrink-0">
                   <span
                     className={`font-bold text-sm sm:text-base ${
                       isIncome ? 'text-emerald-400' : 'text-rose-400'
@@ -336,11 +445,12 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     {formatCurrency(Number(t.amount))}
                   </span>
                   <button
-                    onClick={() => handleDelete(t)}
-                    title="Delete transaction"
-                    className="text-slate-600 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                    onClick={() => handleInitiateUndo(t)}
+                    title={`Undo this transaction and ${isIncome ? 'deduct' : 'refund'} ${formatCurrency(Number(t.amount))} on ${accountName}`}
+                    className="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/25 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+                    <span className="hidden sm:inline">Undo</span>
                   </button>
                 </div>
               </div>

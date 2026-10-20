@@ -3,6 +3,121 @@ import type { UserDeviceSession } from '../types';
 
 const DEVICE_ID_KEY = 'apex_device_id';
 const LOCAL_SESSION_KEY_PREFIX = 'apex_active_device_session_';
+export const DEVICE_LOCK_DISABLED_KEY = 'apex_device_lock_disabled';
+export const USER_DEVICE_LOCK_DISABLED_PREFIX = 'apex_user_device_lock_disabled_';
+
+// ============================================================================
+// Admin Device Lock Configuration
+// ============================================================================
+
+/**
+ * Checks if device lock is globally disabled or disabled for a specific user.
+ */
+export function isDeviceLockDisabled(userId?: string): boolean {
+  try {
+    if (localStorage.getItem(DEVICE_LOCK_DISABLED_KEY) === 'true') {
+      return true;
+    }
+    if (userId && localStorage.getItem(`${USER_DEVICE_LOCK_DISABLED_PREFIX}${userId}`) === 'true') {
+      return true;
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+/**
+ * Toggles global single-device lock enforcement (admin capability).
+ */
+export function setDeviceLockDisabled(disabled: boolean): void {
+  try {
+    if (disabled) {
+      localStorage.setItem(DEVICE_LOCK_DISABLED_KEY, 'true');
+    } else {
+      localStorage.removeItem(DEVICE_LOCK_DISABLED_KEY);
+    }
+    window.dispatchEvent(new CustomEvent('apex_device_lock_changed', { detail: { disabled } }));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Checks if device lock is disabled specifically for a user.
+ */
+export function isUserDeviceLockDisabled(userId: string): boolean {
+  try {
+    return localStorage.getItem(`${USER_DEVICE_LOCK_DISABLED_PREFIX}${userId}`) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Toggles device lock enforcement for an individual user (admin capability).
+ */
+export function setUserDeviceLockDisabled(userId: string, disabled: boolean): void {
+  try {
+    if (disabled) {
+      localStorage.setItem(`${USER_DEVICE_LOCK_DISABLED_PREFIX}${userId}`, 'true');
+    } else {
+      localStorage.removeItem(`${USER_DEVICE_LOCK_DISABLED_PREFIX}${userId}`);
+    }
+    window.dispatchEvent(new CustomEvent('apex_device_lock_changed', { detail: { userId, disabled } }));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Clears/releases active device session for a user (admin capability).
+ * Allows the user to immediately log in from any other device without conflicts.
+ */
+export async function clearUserDeviceSession(userId: string): Promise<boolean> {
+  try {
+    await supabase.from('user_device_sessions').delete().eq('user_id', userId);
+  } catch {
+    // ignore
+  }
+  try {
+    localStorage.removeItem(`${LOCAL_SESSION_KEY_PREFIX}${userId}`);
+  } catch {
+    // ignore
+  }
+  window.dispatchEvent(new CustomEvent('apex_device_lock_changed', { detail: { userId, cleared: true } }));
+  return true;
+}
+
+/**
+ * Fetches user device session info for admin diagnostics.
+ */
+export async function getUserDeviceSession(userId: string): Promise<UserDeviceSession | null> {
+  try {
+    const { data, error } = await supabase
+      .from('user_device_sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (!error && data) {
+      return data as UserDeviceSession;
+    }
+  } catch {
+    // fallback to local storage
+  }
+
+  try {
+    const localRaw = localStorage.getItem(`${LOCAL_SESSION_KEY_PREFIX}${userId}`);
+    if (localRaw) {
+      return JSON.parse(localRaw) as UserDeviceSession;
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
 
 // ============================================================================
 // Device Identification
@@ -98,7 +213,8 @@ export interface DeviceSessionCheckResult {
 
 /**
  * Validates whether this device is authorized to log in or use the account.
- * Rejects multi-device concurrent logins unless forceOverride is requested.
+ * Rejects multi-device concurrent logins unless forceOverride is requested
+ * or admin has disabled device lock.
  */
 export async function registerDeviceSession(
   userId: string,
@@ -108,6 +224,7 @@ export async function registerDeviceSession(
   const currentDeviceName = getDeviceName();
   const currentPlatform = getDevicePlatform();
   const now = new Date().toISOString();
+  const lockDisabled = isDeviceLockDisabled(userId);
 
   try {
     // 1. Fetch current active session from Supabase
@@ -123,8 +240,8 @@ export async function registerDeviceSession(
       return handleLocalSessionFallback(userId, currentDeviceId, currentDeviceName, forceOverride);
     }
 
-    // 2. If an active session exists on another device
-    if (existingSession && existingSession.active_device_id !== currentDeviceId) {
+    // 2. If an active session exists on another device and device lock is NOT disabled
+    if (!lockDisabled && existingSession && existingSession.active_device_id !== currentDeviceId) {
       if (!forceOverride) {
         // Multi-device login blocked!
         return {
@@ -171,10 +288,16 @@ export async function registerDeviceSession(
 /**
  * Heartbeat check: Ensures this physical device is still the active session.
  * If another device has logged in and claimed the account, returns isValid: false.
+ * If admin has disabled device lock, returns isValid: true.
  */
 export async function checkDeviceSessionValidity(
   userId: string
 ): Promise<{ isValid: boolean; activeDeviceName?: string }> {
+  // If admin has disabled device lock, multi-device usage is explicitly allowed
+  if (isDeviceLockDisabled(userId)) {
+    return { isValid: true };
+  }
+
   const currentDeviceId = getDeviceId();
 
   try {
@@ -239,11 +362,12 @@ function handleLocalSessionFallback(
   currentDeviceName: string,
   forceOverride: boolean
 ): DeviceSessionCheckResult {
+  const lockDisabled = isDeviceLockDisabled(userId);
   const localRaw = localStorage.getItem(`${LOCAL_SESSION_KEY_PREFIX}${userId}`);
   if (localRaw) {
     try {
       const parsed: UserDeviceSession = JSON.parse(localRaw);
-      if (parsed.active_device_id !== currentDeviceId && !forceOverride) {
+      if (!lockDisabled && parsed.active_device_id !== currentDeviceId && !forceOverride) {
         return {
           allowed: false,
           activeDeviceId: parsed.active_device_id,

@@ -108,6 +108,19 @@ In the Admin Portal:
 2. Click **Execute Global Database Refresh**.
 3. All mock/stale records will be purged, all `localStorage` caches will be flushed, and user accounts will be re-initialized to strictly `0.00` balance.
 
+### Disabling Device Lock (Multi-Device Login Override):
+1. In the Admin Portal, click the **Device Lock** badge in the header or visit the **Security & RLS Sentinel** tab.
+2. Toggle the switch to **Disable Device Lock**.
+3. Multi-device concurrent logins are now permitted across all platform accounts without triggering collision warnings or session kickouts.
+4. To manage an individual user, open **Available Users Directory > Inspect > Hardware Device Lock** to release their session or toggle lock exemption per-user.
+
+### Undoing User Account Transactions Transaction-Wise:
+1. Open **Available Users Directory** in the Admin Portal and click **Inspect** on any user.
+2. Navigate to the **Ledger & Undo Txs** tab.
+3. Review their live financial accounts and transaction ledger.
+4. Click **Undo** on any transaction to preview the balance reversal calculation and confirm the adjustment.
+5. The transaction is removed and the user's account balance is updated automatically with full audit trail logging.
+
 ---
 
 ## Step 6: Code Verification & Production Build

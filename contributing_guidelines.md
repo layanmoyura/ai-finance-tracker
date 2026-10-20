@@ -78,6 +78,11 @@ When contributing to Apex LifeOS, you must strictly follow these platform invari
 * **Component & Directory Inventory:** Any new component added to `src/components/` or service added to `src/services/` must be cataloged in the Project Directory Structure and Key Modules sections of `README.md` and `project_readme.md`.
 * **Zero Documentation Drift:** Documentation must never lag behind code. Out-of-sync documentation is treated with the same severity as a failing test or broken build.
 
+### 8. Transaction-Wise Undo & Balance Integrity
+* **Atomic Balance Rollback:** Undoing a transaction must atomically restore the exact balance on the target account ($+\text{amount}$ for expenses, $-\text{amount}$ for income).
+* **Foreign Key Cleanup:** Any transaction rollback must automatically nullify references in dependent subsystems (`tasks.related_transaction_id`, `personal_assets.linked_transaction_id`, and `contacts_ledger.settled_transaction_id`).
+* **Audit Trail Telemetry:** All transaction undo actions—whether initiated by users or administrators—must record a non-personal audit event in the platform telemetry stream.
+
 ---
 
 ## 📋 Pre-Pull Request Checklist
@@ -85,7 +90,8 @@ When contributing to Apex LifeOS, you must strictly follow these platform invari
 - [ ] `npm run build` succeeds with zero TypeScript or Vite errors.
 - [ ] `npm run lint` reports zero linter errors.
 - [ ] Responsive UI verified on mobile (360px - 414px), tablet (768px), and desktop (1280px+).
-- [ ] No regression in single-device session lock or geofence proximity alerts.
+- [ ] No regression in single-device session lock (including admin disable toggle) or geofence proximity alerts.
+- [ ] Atomic balance rollback and foreign key cleanup verified across transaction undo flows.
 - [ ] All new database operations adhere to Row-Level Security (RLS).
-- [ ] Markdown documentation (`README.md`, `project_readme.md`, `contributing_guidelines.md`, `database_schema.md`) updated to reflect all code and architectural changes.
+- [ ] Markdown documentation (`README.md`, `project_readme.md`, `contributing_guidelines.md`, `database_schema.md`, `setup_guide.md`) updated to reflect all code and architectural changes.
 - [ ] Directory tree and module lists in `README.md` and `project_readme.md` reflect all newly created or updated files.

@@ -123,8 +123,17 @@ Traditional personal finance apps only track what you spent *after* you've alrea
 * **Hardware-Partitioned Location Data**: GPS fixes, velocity timeline events, and transit statistics are strictly partitioned by unique physical `device_id`, preventing GPS crosstalk or route contamination across devices.
 * **1 Active Device Enforcement**: Users cannot be actively logged in from multiple devices simultaneously (`user_device_sessions`). Attempting to log in on a second device displays an active session transfer prompt.
 * **Continuous Heartbeat Sentinel**: Background heartbeat monitors session ownership; if a remote device claims the account, the local device is immediately logged out safely.
+* **Admin Device Lock Override**: Authorized administrators can toggle Device Lock enforcement globally or on a per-user basis directly from the Executive Admin Console (`AdminPortal`). When disabled, users and administrators can log into multiple physical phones, desktops, and browsers concurrently without encountering collision warnings or receiving session kickouts.
+* **1-Click Session Release**: Administrators can release and clear active device bindings directly from the User Inspector, resolving terminal lockouts instantly.
 
-### 11. 🔄 Independent Module-by-Module Reset Controls
+### 11. 🔄 Transaction-Wise Account Undo & Ledger Rollback Engine
+* **Precision Ledger Reversal**: Revert financial entries directly from the `TransactionList`, `AccountManager`, or the Executive Admin Console on a granular, transaction-by-transaction basis.
+* **Atomic Balance Synchronization**: Undoing an expense refunds the funds back to the designated account balance ($+\text{amount}$), while undoing an income deducts the funds ($-\text{amount}$), keeping double-entry ledger math 100% synchronized in real time.
+* **Dependent Reference Cleanup**: Reverting a transaction automatically cleans and resets referencing foreign keys across `tasks` (`related_transaction_id`), `personal_assets` (`linked_transaction_id`), and `contacts_ledger` (`settled_transaction_id`).
+* **Interactive Balance Preview**: Displays prior balance, reversal delta, and projected balance before confirming execution.
+* **Administrative Ledger Intervention**: Authorized administrators can inspect any user's accounts and undo transactions transaction-wise on their behalf with complete audit logging.
+
+### 12. 🔄 Independent Module-by-Module Reset Controls
 * Each subsystem possesses its own dedicated **Reset Button** directly inside its header toolbar:
   * **Reset Transactions**: Deletes all recorded transactions and resets ledger history.
   * **Reset Accounts**: Resets all balances to zero and restores a clean default Checking Account (`0.00`).
@@ -234,9 +243,9 @@ ai-finance-tracker/
 │   └── poster.html                      # Marketing poster and feature showcase
 ├── src/
 │   ├── components/
-│   │   ├── AccountManager.tsx           # Multi-account balance sheets & reset (starts at 0.00)
+│   │   ├── AccountManager.tsx           # Multi-account balance sheets, account ledger & transaction-wise undo
 │   │   ├── AdminAuthModal.tsx           # Strict admin authorization modal (layanmoyura@proton.me)
-│   │   ├── AdminPortal.tsx              # Platform user telemetry, audit logs & 1-click DB purge
+│   │   ├── AdminPortal.tsx              # Platform user telemetry, audit logs, device lock toggle & user transaction undo
 │   │   ├── AiTransactionInput.tsx       # Natural language expense logger with Gemini Flash & Prompt Guard
 │   │   ├── AssetManager.tsx             # Asset inventory, warranty vault & reset
 │   │   ├── AuthModal.tsx                # Single-device session login & registration
@@ -254,7 +263,7 @@ ai-finance-tracker/
 │   │   ├── SplitBillModal.tsx           # Group bill splitter with UPI/Venmo/PayPal deep links
 │   │   ├── SubscriptionManager.tsx      # Recurring billing, cancellation links & reset
 │   │   ├── TaskManager.tsx              # Operations, financial task bridge & reset
-│   │   └── TransactionList.tsx          # Filterable ledger transactions & reset
+│   │   └── TransactionList.tsx          # Filterable ledger transactions, reset & transaction-wise undo
 │   ├── context/
 │   │   └── PreferencesContext.tsx       # Dynamic currency & theme context
 │   ├── hooks/
@@ -264,9 +273,10 @@ ai-finance-tracker/
 │   │   ├── aiSecurityGuard.ts          # Prompt injection scanner, adversarial pattern detector & schema validator
 │   │   ├── authRedirectService.ts      # Auth redirect normalizer, URL feedback parser & parameter cleaner
 │   │   ├── databaseAdminService.ts     # 1-Click database purge & clean 0.00 balance reset
-│   │   ├── deviceSessionService.ts     # Single-device session lock & hardware UUID
+│   │   ├── deviceSessionService.ts     # Single-device session lock, admin lock disable override & hardware UUID
 │   │   ├── locationMobilityService.ts   # Haversine math, traffic classifier, simulator
-│   │   └── mobilePairingService.ts     # Zero-exposure mobile pairing token, visual QR code & secret masking
+│   │   ├── mobilePairingService.ts     # Zero-exposure mobile pairing token, visual QR code & secret masking
+│   │   └── transactionUndoService.ts   # Transaction-wise account rollback engine & balance synchronization
 │   ├── types/
 │   │   └── index.ts                     # Core TypeScript schemas
 │   ├── App.tsx                          # Root coordinator & global shortcut handler (Ctrl+Shift+A)

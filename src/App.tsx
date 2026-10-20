@@ -472,7 +472,7 @@ export function App() {
               onClick={() => setVerifiedNotification(false)}
               className="text-slate-400 hover:text-white font-medium cursor-pointer text-xs"
             >
-              ✕
+              âœ•
             </button>
           </div>
         </div>
@@ -551,7 +551,7 @@ export function App() {
                       <div>
                         <h3 className="text-sm font-bold text-white">Daily Tasks &amp; Bill Reminders</h3>
                         <p className="text-xs text-slate-400">
-                          {pendingTasks.length} active tasks • {pendingBills.length} upcoming bills
+                          {pendingTasks.length} active tasks â€¢ {pendingBills.length} upcoming bills
                         </p>
                       </div>
                     </div>
@@ -619,6 +619,7 @@ export function App() {
                   </div>
                   <TransactionList
                     userId={user.id}
+                    userEmail={user.email || undefined}
                     transactions={transactions.slice(0, 6)}
                     accounts={accounts}
                     categories={categories}
@@ -643,8 +644,11 @@ export function App() {
                   </div>
                   <AccountManager
                     userId={user.id}
+                    userEmail={user.email || undefined}
                     accounts={accounts}
+                    transactions={transactions}
                     onAccountUpdated={fetchData}
+                    onTransactionsUpdated={fetchData}
                   />
                 </div>
 
@@ -736,6 +740,7 @@ export function App() {
           <div className="space-y-6">
             <TransactionList
               userId={user.id}
+              userEmail={user.email || undefined}
               transactions={transactions}
               accounts={accounts}
               categories={categories}
@@ -751,8 +756,11 @@ export function App() {
           <div className="space-y-6">
             <AccountManager
               userId={user.id}
+              userEmail={user.email || undefined}
               accounts={accounts}
+              transactions={transactions}
               onAccountUpdated={fetchData}
+              onTransactionsUpdated={fetchData}
             />
           </div>
         )}
@@ -859,6 +867,8 @@ export function App() {
               tasksCount: tasks.length,
               subsCount: subscriptions.length,
             }}
+            accounts={accounts}
+            transactions={transactions}
             onLockSession={() => {
               setAdminSession(false);
               setIsAdmin(false);
