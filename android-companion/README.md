@@ -17,8 +17,14 @@ This halts browser JavaScript execution, causing missed commute trips, broken sp
 
 ### What This APK Does:
 * **Native Foreground Service**: Runs with a low-priority ongoing notification (`FOREGROUND_SERVICE_LOCATION`), preventing Android from terminating the process.
-* **Fused Location Provider**: High-precision GPS, Wi-Fi, and cellular trilateration with hardware power optimization.
-* **Dynamic Velocity Rate Shifting**: Polling every 10–15s when traveling in a vehicle, dynamically scaling down to 90s–3m when stationary to conserve battery (<2% per 8 hours).
+* **Hybrid Velocity Estimator Engine**:
+  - Direct hardware Doppler speed checks with speed accuracy validation.
+  - Kinematic fallback computation ($\Delta d / \Delta t$) using monotonic `elapsedRealtimeNanos` when Doppler speed is unavailable.
+  - GPS error ellipse filtering to eliminate stationary noise and desk jitter.
+  - Exponential Moving Average (EMA) smoothing for analog-smooth speedometer responses.
+* **Continuous Velocity Polling**: 3-second active polling interval with `0.0m` displacement threshold to guarantee immediate deceleration and red-light stop detection.
+* **Smart Telemetry Throttling & Immediate State Transitions**: Emits database pings immediately when movement starts or stops, every 3–4 seconds during active motion, and scales down to a 60-second periodic heartbeat when parked.
+* **Comprehensive Mode Classification**: Automatic classification across `stationary`, `walking`, `cycling`, `vehicle`, and `high_speed_transit` (expressway $\ge 80\text{ km/h}$).
 * **Offline SQLite Queue**: Queues location pings in an embedded Room database when driving through tunnels or dead zones, automatically flushing to Supabase on reconnection.
 * **Direct Supabase Ingestion**: Streams real-time telemetry straight to your `device_location_pings` table, which broadcasts via Supabase Realtime to your desktop/web dashboard.
 
@@ -72,4 +78,3 @@ The mobile companion features **Zero-Exposure Credential Pairing** and **Hardwar
    * **Visual QR Code Pairing**: Scan the pairing QR code directly using your phone's camera.
 6. The app encrypts credentials into hardware-backed `EncryptedSharedPreferences` via Android Keystore (AES-256 GCM). Tap **"START BACKGROUND TRACKING"**.
 7. In your Apex LifeOS web dashboard under **Location & Timeline**, select **"📱 Phone APK Daemon"** to view your live velocity, GPS coordinates, and commute trips streaming in real-time from your pocket!
-

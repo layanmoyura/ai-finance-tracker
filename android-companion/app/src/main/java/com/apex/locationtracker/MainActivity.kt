@@ -122,10 +122,12 @@ fun TrackerAppScreen(
     ) { permissions ->
         val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
         if (fineGranted) {
-            Toast.makeText(context, "Location access granted", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Location & telemetry access granted", Toast.LENGTH_SHORT).show()
             if (supabaseManager.isConfigured) {
                 onStartService()
             }
+        } else {
+            Toast.makeText(context, "Precise location is required for speed and timeline tracking", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -235,12 +237,13 @@ fun TrackerAppScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Transport Mode Badge
+                    // Transport Mode Badge (with high-speed transit support)
                     AssistChip(
                         onClick = { },
                         label = {
                             Text(
                                 text = when (liveState.transportMode) {
+                                    "high_speed_transit" -> "🚄 High-Speed Transit"
                                     "vehicle" -> "🚗 Vehicle Transit"
                                     "cycling" -> "🚴 Cycling"
                                     "walking" -> "🚶 Walking"
@@ -281,6 +284,16 @@ fun TrackerAppScreen(
                     }
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Velocity Sensor:", color = Color(0xFF94A3B8), fontSize = 13.sp)
+                        Text(
+                            text = liveState.speedSensingMethod,
+                            color = Color(0xFF38BDF8),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("GPS Accuracy:", color = Color(0xFF94A3B8), fontSize = 13.sp)
                         Text(
                             text = if (liveState.accuracyMeters > 0) "±${String.format(Locale.US, "%.1f", liveState.accuracyMeters)} m" else "N/A",
@@ -315,19 +328,31 @@ fun TrackerAppScreen(
                     if (liveState.isTracking) {
                         onStopService()
                     } else {
-                        // Check permissions
+                        // Check location and notification permissions
                         val hasFine = ContextCompat.checkSelfPermission(
                             context,
                             Manifest.permission.ACCESS_FINE_LOCATION
                         ) == PackageManager.PERMISSION_GRANTED
 
-                        if (!hasFine) {
+                        val hasNotification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) == PackageManager.PERMISSION_GRANTED
+                        } else {
+                            true
+                        }
+
+                        if (!hasFine || !hasNotification) {
                             val perms = mutableListOf(
                                 Manifest.permission.ACCESS_FINE_LOCATION,
                                 Manifest.permission.ACCESS_COARSE_LOCATION
                             )
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                perms.add(Manifest.permission.ACTIVITY_RECOGNITION)
                             }
                             locationPermissionsLauncher.launch(perms.toTypedArray())
                         } else {
