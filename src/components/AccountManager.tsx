@@ -20,6 +20,10 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { CurrencyLogo } from './CurrencyLogo';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
+import { accountSchema, type AccountFormData } from '../services/validationSchemas';
 import { undoAccountTransaction, previewTransactionUndo, type UndoPreview } from '../services/transactionUndoService';
 
 interface AccountManagerProps {
@@ -41,11 +45,24 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
 }) => {
   const { preferences, formatCurrency, formatDate } = usePreferences();
   const [showAddModal, setShowAddModal] = useState(false);
-  const [name, setName] = useState('');
-  const [balance, setBalance] = useState<number>(0);
-  const [currency, setCurrency] = useState(preferences.currency || 'USD');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const {
+    register: registerAccount,
+    handleSubmit: handleAccountSubmit,
+    formState: { errors: accountErrors },
+    setValue: setAccountValue,
+    reset: resetAccountForm,
+  } = useForm<AccountFormData>({
+    resolver: zodResolver(accountSchema),
+    defaultValues: {
+      name: '',
+      balance: 0,
+      currency: preferences.currency || 'USD',
+    },
+    mode: 'onTouched',
+  });
 
   // Account Ledger & Undo Modal state
   const [selectedLedgerAccount, setSelectedLedgerAccount] = useState<Account | null>(null);
@@ -56,30 +73,39 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
   const [isUndoing, setIsUndoing] = useState(false);
   const [undoFeedback, setUndoFeedback] = useState<string | null>(null);
 
-  const handleAddAccount = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
+  const onAccountInvalid = (errors: typeof accountErrors) => {
+    const errorMsg =
+      errors.name?.message ||
+      errors.balance?.message ||
+      errors.currency?.message ||
+      'Please correct the account errors.';
+    toast.error('Validation Alert', { description: errorMsg });
+  };
 
+  const onAddAccountSubmit = async (data: AccountFormData) => {
     setLoading(true);
     setError(null);
 
     try {
       const { error: insertError } = await supabase.from('accounts').insert({
         user_id: userId,
-        name: name.trim(),
-        balance: Number(balance) || 0,
-        currency,
+        name: data.name.trim(),
+        balance: Number(data.balance) || 0,
+        currency: data.currency,
       });
 
       if (insertError) throw insertError;
 
-      setName('');
-      setBalance(0);
+      resetAccountForm();
       setShowAddModal(false);
+      toast.success('Account Created', {
+        description: `Account "${data.name}" added successfully.`,
+      });
       onAccountUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to add account';
       setError(msg);
+      toast.error('Creation Failed', { description: msg });
     } finally {
       setLoading(false);
     }
@@ -96,10 +122,11 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
       if (selectedLedgerAccount?.id === id) {
         setSelectedLedgerAccount(null);
       }
+      toast.success('Account Deleted', { description: 'The account and associated ledgers were removed.' });
       onAccountUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete account';
-      alert(msg);
+      toast.error('Delete Failed', { description: msg });
     }
   };
 
@@ -129,10 +156,11 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
         });
       }
 
+      toast.success('Accounts Reset', { description: 'All account balances reset to 0.00.' });
       onAccountUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to reset accounts';
-      alert(msg);
+      toast.error('Reset Failed', { description: msg });
     } finally {
       setIsResetting(false);
     }
@@ -185,6 +213,7 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
       });
 
       setUndoFeedback(res.message);
+      toast.success('Transaction Undone', { description: res.message });
       setUndoTargetTx(null);
       setUndoPreview(null);
 
@@ -200,7 +229,7 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to undo transaction';
-      alert(msg);
+      toast.error('Undo Failed', { description: msg });
     } finally {
       setIsUndoing(false);
     }
@@ -619,26 +648,34 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
               </div>
             )}
 
-            <form onSubmit={handleAddAccount} className="space-y-4">
+            <form onSubmit={handleAccountSubmit(onAddAccountSubmit, onAccountInvalid)} className="space-y-4" noValidate>
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                   Account Name
                 </label>
                 <input
                   type="text"
-                  required
+                  {...registerAccount('name')}
                   placeholder="e.g. Checking Account, Main Cash, Credit Card"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  className={`w-full bg-slate-800 border ${
+                    accountErrors.name
+                      ? 'border-rose-500/80 focus:ring-rose-500/50'
+                      : 'border-slate-700 focus:ring-emerald-500/50'
+                  } rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 transition`}
                 />
+                {accountErrors.name && (
+                  <span className="text-xs text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    {accountErrors.name.message}
+                  </span>
+                )}
                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
                   <span className="text-[10px] text-slate-500">Presets:</span>
                   {['Checking Account', 'Savings Account', 'In-Hand Cash (Physical Wallet)', 'Credit Card'].map((preset) => (
                     <button
                       key={preset}
                       type="button"
-                      onClick={() => setName(preset)}
+                      onClick={() => setAccountValue('name', preset, { shouldValidate: true })}
                       className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition cursor-pointer"
                     >
                       {preset}
@@ -659,12 +696,20 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
                   <input
                     type="number"
                     step="0.01"
-                    required
-                    value={balance}
-                    onChange={(e) => setBalance(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-8 pr-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    {...registerAccount('balance')}
+                    className={`w-full bg-slate-800 border ${
+                      accountErrors.balance
+                        ? 'border-rose-500/80 focus:ring-rose-500/50'
+                        : 'border-slate-700 focus:ring-emerald-500/50'
+                    } rounded-xl pl-8 pr-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 transition`}
                   />
                 </div>
+                {accountErrors.balance && (
+                  <span className="text-xs text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    {accountErrors.balance.message}
+                  </span>
+                )}
               </div>
 
               <div>
@@ -672,8 +717,7 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
                   Currency
                 </label>
                 <select
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
+                  {...registerAccount('currency')}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                 >
                   {CURRENCIES.map((c) => (
@@ -682,6 +726,12 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
                     </option>
                   ))}
                 </select>
+                {accountErrors.currency && (
+                  <span className="text-xs text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    {accountErrors.currency.message}
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3">
