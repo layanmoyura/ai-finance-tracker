@@ -64,6 +64,8 @@ import {
   Check,
   QrCode,
   Lock,
+  Download,
+  ExternalLink,
 } from 'lucide-react';
 import {
   generatePairingToken,
@@ -1813,6 +1815,25 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
             </div>
 
 
+
+            {/* Download Latest Release APK */}
+            <a
+              href="https://github.com/layanmoyura/ai-finance-tracker/releases/latest"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-2.5 px-4 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 border border-purple-500/30 text-white text-xs font-bold flex items-center justify-between gap-2 shadow-sm transition group cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                  <Download className="w-4 h-4" />
+                </div>
+                <div className="text-left">
+                  <div className="text-white font-bold">Download Latest APK (v1.0.0)</div>
+                  <div className="text-[10px] text-slate-400 font-normal">Direct .apk download from GitHub Releases</div>
+                </div>
+              </div>
+              <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-white transition" />
+            </a>
 
             {/* Step-by-Step Instructions */}
             <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-2 text-xs text-slate-300">
