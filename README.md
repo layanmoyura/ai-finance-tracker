@@ -9,17 +9,17 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/layanpro123456/ai-finance-tracker/actions/workflows/build-tracker-apk.yml">
-    <img src="https://github.com/layanpro123456/ai-finance-tracker/actions/workflows/build-tracker-apk.yml/badge.svg" alt="Build Android APK" />
+  <a href="https://github.com/layanmoyura/ai-finance-tracker/actions/workflows/build-tracker-apk.yml">
+    <img src="https://github.com/layanmoyura/ai-finance-tracker/actions/workflows/build-tracker-apk.yml/badge.svg" alt="Build Android APK" />
   </a>
-  <a href="https://github.com/layanpro123456/ai-finance-tracker/actions/workflows/deploy.yml">
-    <img src="https://github.com/layanpro123456/ai-finance-tracker/actions/workflows/deploy.yml/badge.svg" alt="Deploy to GitHub Pages" />
+  <a href="https://github.com/layanmoyura/ai-finance-tracker/actions/workflows/deploy.yml">
+    <img src="https://github.com/layanmoyura/ai-finance-tracker/actions/workflows/deploy.yml/badge.svg" alt="Deploy to GitHub Pages" />
   </a>
 </p>
 
 <p align="center">
   <a href="docs/Apex_LifeOS_Technical_Documentation.pdf"><strong>📄 Technical Documentation (PDF)</strong></a> •
-  <a href="https://layanpro123456.github.io/ai-finance-tracker/tutorial.html"><strong>🎬 Beginner Video Tutorial</strong></a> •
+  <a href="https://layanmoyura.github.io/ai-finance-tracker/tutorial.html"><strong>🎬 Beginner Video Tutorial</strong></a> •
   <a href="docs/TUTORIAL_VIDEO_SCRIPT.md"><strong>📝 Video Production Script</strong></a>
 </p>
 
@@ -353,9 +353,9 @@ Execute the complete SQL definitions from [database_schema.md](database_schema.m
 
 ### 4. Configure Authentication Redirect URLs (Prevent 404s)
 In **Supabase Dashboard > Authentication > URL Configuration**:
-* **Site URL**: `https://layanpro123456.github.io/ai-finance-tracker/` (or `http://localhost:5173` locally)
+* **Site URL**: `https://layanmoyura.github.io/ai-finance-tracker/` (or `http://localhost:5173` locally)
 * **Redirect URLs** (Allow-list):
-  * `https://layanpro123456.github.io/ai-finance-tracker/**`
+  * `https://layanmoyura.github.io/ai-finance-tracker/**`
   * `http://localhost:5173/**`
   * `http://127.0.0.1:5173/**`
   * `http://localhost:3000/**`
