@@ -57,6 +57,7 @@ data class LiveTrackerState(
     val isCharging: Boolean = false,
     val lastPingTimestamp: String = "",
     val totalPingsTransmitted: Int = 0,
+    val pendingOfflineCount: Int = 0,
     val lastHttpStatus: String = "Idle",
     val statusMessage: String = "Service ready"
 )
@@ -104,7 +105,7 @@ class LocationTrackingService : Service(), SensorEventListener {
 
     override fun onCreate() {
         super.onCreate()
-        supabaseManager = SupabaseManager(this)
+        supabaseManager = SupabaseManager.getInstance(this)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -407,26 +408,45 @@ class LocationTrackingService : Service(), SensorEventListener {
 
             serviceScope.launch {
                 val result = supabaseManager.dispatchPing(ping)
-                pingCounter++
+                val currentOffline = supabaseManager.getOfflineCount()
 
-                val statusText = if (result.isSuccess) {
-                    "HTTP ${result.getOrNull()}"
+                val statusText: String
+                if (result.isSuccess) {
+                    pingCounter++
+                    statusText = if (currentOffline > 0) {
+                        "HTTP ${result.getOrNull()} (Flushing: $currentOffline left)"
+                    } else {
+                        "HTTP ${result.getOrNull()}"
+                    }
                 } else {
-                    "Offline Cached"
+                    val ex = result.exceptionOrNull()
+                    val msg = ex?.message ?: "Error"
+                    statusText = when {
+                        msg.contains("Not Configured", ignoreCase = true) -> "Not Paired"
+                        msg.contains("HTTP 401", ignoreCase = true) -> "HTTP 401 (Auth Failed)"
+                        msg.contains("HTTP 403", ignoreCase = true) -> "HTTP 403 (Perm Denied)"
+                        msg.contains("HTTP 400", ignoreCase = true) -> "HTTP 400 (Bad Format)"
+                        else -> "Offline Cached ($currentOffline queued)"
+                    }
                 }
 
                 _liveState.value = _liveState.value.copy(
                     totalPingsTransmitted = pingCounter,
+                    pendingOfflineCount = currentOffline,
                     lastHttpStatus = statusText
                 )
 
-                val summaryText = "${String.format(Locale.US, "%.0f", speedKmh)} km/h ($mode) • $statusText • $pingCounter pings"
+                val summaryText = "${String.format(Locale.US, "%.0f", speedKmh)} km/h ($mode) • $statusText • $pingCounter sent"
                 notificationManager.notify(NOTIFICATION_ID, buildNotification(summaryText))
             }
         } else {
             // Update ongoing notification even if database dispatch was throttled
-            val summaryText = "${String.format(Locale.US, "%.0f", speedKmh)} km/h ($mode) • ${_liveState.value.lastHttpStatus} • $pingCounter pings"
-            notificationManager.notify(NOTIFICATION_ID, buildNotification(summaryText))
+            serviceScope.launch {
+                val currentOffline = supabaseManager.getOfflineCount()
+                _liveState.value = _liveState.value.copy(pendingOfflineCount = currentOffline)
+                val summaryText = "${String.format(Locale.US, "%.0f", speedKmh)} km/h ($mode) • ${_liveState.value.lastHttpStatus} • $pingCounter sent"
+                notificationManager.notify(NOTIFICATION_ID, buildNotification(summaryText))
+            }
         }
     }
 

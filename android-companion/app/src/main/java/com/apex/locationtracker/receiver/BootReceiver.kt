@@ -11,7 +11,7 @@ import com.apex.locationtracker.service.LocationTrackingService
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            val supabaseManager = SupabaseManager(context)
+            val supabaseManager = SupabaseManager.getInstance(context)
             if (supabaseManager.isConfigured) {
                 Log.i("BootReceiver", "Device reboot detected. Auto-restarting Apex Location Service...")
                 val serviceIntent = Intent(context, LocationTrackingService::class.java).apply {

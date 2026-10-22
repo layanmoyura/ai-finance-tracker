@@ -25,4 +25,7 @@ interface LocationDao {
 
     @Query("DELETE FROM offline_location_pings WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<String>)
+
+    @Query("DELETE FROM offline_location_pings")
+    suspend fun clearAllPings(): Int
 }
