@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        supabaseManager = SupabaseManager(this)
+        supabaseManager = SupabaseManager.getInstance(this)
 
         setContent {
             MaterialTheme(
@@ -111,8 +111,9 @@ fun TrackerAppScreen(
 
     var showConfigModal by remember { mutableStateOf(!supabaseManager.isConfigured) }
     var offlineCount by remember { mutableIntStateOf(0) }
+    var isSyncing by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(liveState.totalPingsTransmitted, liveState.lastHttpStatus, liveState.pendingOfflineCount) {
         offlineCount = supabaseManager.getOfflineCount()
     }
 
@@ -319,6 +320,66 @@ fun TrackerAppScreen(
                             fontSize = 13.sp
                         )
                     }
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Offline Queue:", color = Color(0xFF94A3B8), fontSize = 13.sp)
+                        Text(
+                            text = if (offlineCount > 0) "$offlineCount pings cached" else "All synced (0 cached)",
+                            color = if (offlineCount > 0) Color(0xFFFBBF24) else Color(0xFF10B981),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+
+            // Offline Queue Management Card (visible when offline backlog exists)
+            if (offlineCount > 0) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "📦 $offlineCount Cached Pings Pending",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFBBF24),
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "Pings queued while offline or during server pause.",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                coroutineScope.launch {
+                                    isSyncing = true
+                                    val res = supabaseManager.flushOfflineQueue()
+                                    offlineCount = supabaseManager.getOfflineCount()
+                                    isSyncing = false
+                                    if (res.isSuccess) {
+                                        Toast.makeText(context, "✅ Flushed ${res.getOrNull()} pings to Supabase!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "❌ Flush failed: ${res.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            },
+                            enabled = !isSyncing && supabaseManager.isConfigured,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(if (isSyncing) "Syncing..." else "Flush Queue", fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
 
@@ -328,6 +389,13 @@ fun TrackerAppScreen(
                     if (liveState.isTracking) {
                         onStopService()
                     } else {
+                        // Guard: ensure companion app is paired before starting background tracking
+                        if (!supabaseManager.isConfigured) {
+                            Toast.makeText(context, "⚠️ Please pair companion app before starting tracking!", Toast.LENGTH_LONG).show()
+                            showConfigModal = true
+                            return@Button
+                        }
+
                         // Check location and notification permissions
                         val hasFine = ContextCompat.checkSelfPermission(
                             context,
@@ -400,6 +468,7 @@ fun TrackerAppScreen(
     // Secure Settings & Pairing Modal
     if (showConfigModal) {
         var tokenInput by remember { mutableStateOf("") }
+        var isTestingConnection by remember { mutableStateOf(false) }
 
         AlertDialog(
             onDismissRequest = { if (supabaseManager.isConfigured) showConfigModal = false },
@@ -436,18 +505,55 @@ fun TrackerAppScreen(
                                     fontSize = 11.sp
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
-                                OutlinedButton(
-                                    onClick = {
-                                        supabaseManager.clearCredentials()
-                                        Toast.makeText(context, "Pairing removed.", Toast.LENGTH_SHORT).show()
-                                    },
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFCA5A5)),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFFCA5A5))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Unpair / Reset Device", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                isTestingConnection = true
+                                                val res = supabaseManager.testConnection()
+                                                isTestingConnection = false
+                                                if (res.isSuccess) {
+                                                    Toast.makeText(context, "✅ Supabase connection verified!", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(context, "❌ Connection error: ${res.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                                }
+                                            }
+                                        },
+                                        enabled = !isTestingConnection,
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(if (isTestingConnection) "Testing..." else "Test Link", fontSize = 10.sp, color = Color.White)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            supabaseManager.clearCredentials()
+                                            Toast.makeText(context, "Pairing removed.", Toast.LENGTH_SHORT).show()
+                                        },
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFCA5A5)),
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("Unpair", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                if (offlineCount > 0) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                val count = supabaseManager.clearOfflineQueue()
+                                                offlineCount = supabaseManager.getOfflineCount()
+                                                Toast.makeText(context, "Purged $count cached pings", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("Clear Offline Queue ($offlineCount)", fontSize = 10.sp, color = Color(0xFFFBBF24))
+                                    }
                                 }
                             }
                         }
@@ -483,7 +589,14 @@ fun TrackerAppScreen(
                                         val success = supabaseManager.importPairingToken(tokenInput)
                                         if (success) {
                                             showConfigModal = false
-                                            Toast.makeText(context, "✅ Paired successfully! Keys encrypted in Keystore.", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "✅ Paired successfully! Keys encrypted in Keystore.", Toast.LENGTH_SHORT).show()
+                                            coroutineScope.launch {
+                                                val check = supabaseManager.testConnection()
+                                                if (check.isSuccess) {
+                                                    supabaseManager.flushOfflineQueue()
+                                                    offlineCount = supabaseManager.getOfflineCount()
+                                                }
+                                            }
                                         } else {
                                             Toast.makeText(context, "❌ Invalid pairing token.", Toast.LENGTH_SHORT).show()
                                         }
