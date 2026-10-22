@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
 import { supabase, isSupabaseConfigured } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
 import {
@@ -12,6 +15,7 @@ import {
   parseAuthFeedbackFromUrl,
   resendVerificationEmail,
 } from '../services/authRedirectService';
+import { authSchema, type AuthFormData } from '../services/validationSchemas';
 import {
   Lock,
   Mail,
@@ -43,8 +47,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 }) => {
   const { preferences, toggleTheme } = usePreferences();
   const [isSignUp, setIsSignUp] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -64,20 +66,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const thisDeviceName = getDeviceName();
   const thisDeviceId = getDeviceId();
 
+  // React Hook Form + Zod Setup
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    reset,
+  } = useForm<AuthFormData>({
+    resolver: zodResolver(authSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+    },
+    mode: 'onTouched',
+  });
+
   useEffect(() => {
     if (initialAuthError) {
       setError(initialAuthError);
+      toast.error('Authentication Notice', { description: initialAuthError });
     } else {
       const feedback = parseAuthFeedbackFromUrl();
       if (feedback.error) {
         setError(feedback.error);
+        toast.error('Verification Error', { description: feedback.error });
         cleanAuthUrl();
       }
     }
   }, [initialAuthError]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onInvalid = (formErrors: typeof errors) => {
+    const errorMsg =
+      formErrors.email?.message ||
+      formErrors.password?.message ||
+      'Please check your email and password inputs.';
+    toast.error('Validation Alert', {
+      description: errorMsg,
+    });
+  };
+
+  const onSubmit = async (data: AuthFormData) => {
     setLoading(true);
     setError(null);
     setMessage(null);
@@ -85,41 +113,58 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setDeviceConflict(null);
 
     if (!isSupabaseConfigured) {
-      setError('Supabase backend is not configured yet. Please configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.');
+      const unconfiguredMsg =
+        'Supabase backend is not configured yet. Please configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.';
+      setError(unconfiguredMsg);
+      toast.error('Backend Not Connected', {
+        description: 'Configure your .env file to enable authentication and syncing.',
+      });
       setLoading(false);
       return;
     }
+
     try {
       if (isSignUp) {
         const redirectUrl = getAuthRedirectUrl();
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: data.email,
+          password: data.password,
           options: {
             emailRedirectTo: redirectUrl,
           },
         });
         if (signUpError) throw signUpError;
-        if (data.session && data.session.user) {
-          const reg = await registerDeviceSession(data.session.user.id, false);
+
+        if (signUpData.session && signUpData.session.user) {
+          const reg = await registerDeviceSession(signUpData.session.user.id, false);
           if (!reg.allowed) {
             setDeviceConflict({
-              userId: data.session.user.id,
+              userId: signUpData.session.user.id,
               activeDeviceName: reg.activeDeviceName || 'Another Device',
               lastActive: reg.lastActive,
             });
+            toast.warning('Device Conflict', {
+              description: 'Account active on another device.',
+            });
             return;
           }
+          toast.success('Account Created', {
+            description: `Welcome to Apex LifeOS (${data.email})!`,
+          });
           onSuccess();
         } else {
-          setPendingVerificationEmail(email);
+          setPendingVerificationEmail(data.email);
+          toast.info('Verification Required', {
+            description: `A verification link has been dispatched to ${data.email}.`,
+          });
         }
       } else {
         const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
+          email: data.email,
+          password: data.password,
         });
         if (signInError) throw signInError;
+
         if (signInData.user) {
           const reg = await registerDeviceSession(signInData.user.id, false);
           if (!reg.allowed) {
@@ -129,14 +174,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               activeDeviceName: reg.activeDeviceName || 'Another Device',
               lastActive: reg.lastActive,
             });
+            toast.warning('Session Blocked', {
+              description: 'Account already active on another physical device.',
+            });
             return;
           }
+          toast.success('Signed In Successfully', {
+            description: `Logged in as ${data.email}`,
+          });
           onSuccess();
         }
       }
     } catch (err: unknown) {
       const errMessage = err instanceof Error ? err.message : 'An error occurred during authentication.';
       setError(errMessage);
+      toast.error('Authentication Error', {
+        description: errMessage,
+      });
     } finally {
       setLoading(false);
     }
@@ -150,12 +204,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const res = await resendVerificationEmail(pendingVerificationEmail);
       if (res.success) {
-        setResendSuccess('A fresh verification link has been sent to your email.');
+        const successMsg = 'A fresh verification link has been sent to your email.';
+        setResendSuccess(successMsg);
+        toast.success('Email Resent', { description: successMsg });
       } else {
-        setError(res.error || 'Failed to resend verification link. Please wait a minute and try again.');
+        const failMsg = res.error || 'Failed to resend verification link. Please wait a minute and try again.';
+        setError(failMsg);
+        toast.error('Resend Failed', { description: failMsg });
       }
     } catch {
-      setError('Failed to resend verification link. Please try again.');
+      const failMsg = 'Failed to resend verification link. Please try again.';
+      setError(failMsg);
+      toast.error('Resend Failed', { description: failMsg });
     } finally {
       setResendingEmail(false);
     }
@@ -170,12 +230,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const reg = await registerDeviceSession(deviceConflict.userId, true);
       if (reg.allowed) {
         setDeviceConflict(null);
+        toast.success('Session Transferred', {
+          description: 'This device is now the primary active device.',
+        });
         onSuccess();
       } else {
-        setError('Could not transfer session. Please try again.');
+        const msg = 'Could not transfer session. Please try again.';
+        setError(msg);
+        toast.error('Transfer Failed', { description: msg });
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Session transfer failed');
+      const msg = err instanceof Error ? err.message : 'Session transfer failed';
+      setError(msg);
+      toast.error('Transfer Failed', { description: msg });
     } finally {
       setLoading(false);
     }
@@ -185,7 +252,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setDeviceConflict(null);
     await supabase.auth.signOut();
   };
-
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-950 text-slate-100 relative selection:bg-emerald-500 selection:text-slate-950">
@@ -283,32 +349,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 text-left text-xs text-slate-400 space-y-2">
-              <div className="flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span>Click the verification link in your email to activate your account.</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span>After clicking, you will be redirected straight to your dashboard without error.</span>
-              </div>
+              <p>• Check your inbox and spam folder for the confirmation link.</p>
+              <p>• Clicking the link will verify your email and grant full dashboard access.</p>
             </div>
 
             {resendSuccess && (
               <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
                 <span>{resendSuccess}</span>
-              </div>
-            )}
-
-            {!isSupabaseConfigured && (
-              <div className="mb-5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-400" />
-                <div className="leading-snug">
-                  <span className="font-bold text-amber-300">Supabase Backend Not Connected:</span>
-                  <p className="mt-0.5 text-amber-200/80">
-                    Create a <code className="px-1 py-0.5 bg-slate-950 rounded text-amber-400 font-mono text-[11px]">.env</code> file with your Supabase credentials to enable account registration and data syncing. See <code className="px-1 py-0.5 bg-slate-950 rounded text-amber-400 font-mono text-[11px]">.env.example</code>.
-                  </p>
-                </div>
               </div>
             )}
 
@@ -341,6 +389,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   setError(null);
                   setResendSuccess(null);
                   setIsSignUp(false);
+                  reset();
                 }}
                 className="w-full text-slate-400 hover:text-white py-2 text-xs font-medium transition cursor-pointer"
               >
@@ -370,7 +419,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             {error && (
               <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{error}</span>
               </div>
             )}
@@ -380,14 +429,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 type="button"
                 onClick={handleForceTransferSession}
                 disabled={loading}
-                className="w-full bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-bold py-3 px-4 rounded-xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer text-xs"
+                className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold py-2.5 px-4 rounded-xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer text-xs"
               >
                 {loading ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span className="inline-block w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <>
-                    <RefreshCw className="w-4 h-4" />
-                    <span>Transfer Session to This Device</span>
+                    <span>Switch Session to This Device</span>
+                    <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
@@ -412,6 +461,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   setIsSignUp(false);
                   setError(null);
                   setMessage(null);
+                  reset();
                 }}
                 className={`py-2 text-xs font-semibold rounded-lg transition cursor-pointer ${
                   !isSignUp
@@ -427,6 +477,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   setIsSignUp(true);
                   setError(null);
                   setMessage(null);
+                  reset();
                 }}
                 className={`py-2 text-xs font-semibold rounded-lg transition cursor-pointer ${
                   isSignUp
@@ -437,6 +488,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 Create Account
               </button>
             </div>
+
+            {!isSupabaseConfigured && (
+              <div className="mb-5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-400" />
+                <div className="leading-snug">
+                  <span className="font-bold text-amber-300">Supabase Backend Not Connected:</span>
+                  <p className="mt-0.5 text-amber-200/80">
+                    Create a <code className="px-1 py-0.5 bg-slate-950 rounded text-amber-400 font-mono text-[11px]">.env</code> file with your Supabase credentials to enable account registration and data syncing. See <code className="px-1 py-0.5 bg-slate-950 rounded text-amber-400 font-mono text-[11px]">.env.example</code>.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="mb-5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-start gap-2.5">
@@ -452,7 +515,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-4" noValidate>
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                   Email Address
@@ -461,13 +524,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    {...register('email')}
                     placeholder="you@domain.com"
-                    className="w-full bg-slate-950 border border-slate-750 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition"
+                    className={`w-full bg-slate-950 border ${
+                      errors.email
+                        ? 'border-rose-500/80 focus:ring-rose-500/50'
+                        : 'border-slate-750 focus:ring-emerald-500/50 focus:border-emerald-500'
+                    } rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 transition`}
                   />
                 </div>
+                {errors.email && (
+                  <span className="text-xs text-rose-400 mt-1.5 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    {errors.email.message}
+                  </span>
+                )}
               </div>
 
               <div>
@@ -478,13 +549,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    {...register('password')}
                     placeholder="••••••••••••"
-                    className="w-full bg-slate-950 border border-slate-750 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition"
+                    className={`w-full bg-slate-950 border ${
+                      errors.password
+                        ? 'border-rose-500/80 focus:ring-rose-500/50'
+                        : 'border-slate-750 focus:ring-emerald-500/50 focus:border-emerald-500'
+                    } rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 transition`}
                   />
                 </div>
+                {errors.password && (
+                  <span className="text-xs text-rose-400 mt-1.5 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    {errors.password.message}
+                  </span>
+                )}
               </div>
 
               <button
