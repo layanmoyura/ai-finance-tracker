@@ -41,13 +41,22 @@ This guide walks through configuring Supabase, provisioning API keys, running Ap
 
 ## Step 2: Configure Environment Variables
 
-Create a `.env` file in the project root:
+Copy the provided environment template:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your Supabase credentials:
 
 ```env
 # Frontend variables (Vite requires the VITE_ prefix)
 VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<your-anon-public-key>
 ```
+
+> [!NOTE]
+> Apex LifeOS includes a built-in backend sentinel. If credentials are not yet supplied, the application loads cleanly with safe fallbacks and renders a configuration alert directing users to `.env.example` instead of throwing a fatal runtime crash.
 
 > [!TIP]
 > If you wish to use direct Gemini AI transaction parsing from the client or edge function, you can also configure `VITE_GEMINI_API_KEY=<your-gemini-api-key>`.
@@ -125,13 +134,16 @@ In the Admin Portal:
 
 ## Step 6: Code Verification & Production Build
 
-Ensure all TypeScript types and Vite bundles compile without errors:
+Verify test suites, TypeScript types, and production bundles:
 
 ```bash
-# Verify TypeScript and build production bundle
+# Run the complete automated unit test suite (32 tests across 5 test suites)
+npm test
+
+# Verify TypeScript compilation and compile production bundle
 npm run build
 
-# Run fast linter checks
+# Run fast Oxlint static analysis
 npm run lint
 
 # Preview production build locally
