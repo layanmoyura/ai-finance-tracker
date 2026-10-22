@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase, isSupabaseConfigured } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
 import {
   registerDeviceSession,
@@ -84,6 +84,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setResendSuccess(null);
     setDeviceConflict(null);
 
+    if (!isSupabaseConfigured) {
+      setError('Supabase backend is not configured yet. Please configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.');
+      setLoading(false);
+      return;
+    }
     try {
       if (isSignUp) {
         const redirectUrl = getAuthRedirectUrl();
@@ -292,6 +297,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
                 <span>{resendSuccess}</span>
+              </div>
+            )}
+
+            {!isSupabaseConfigured && (
+              <div className="mb-5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-400" />
+                <div className="leading-snug">
+                  <span className="font-bold text-amber-300">Supabase Backend Not Connected:</span>
+                  <p className="mt-0.5 text-amber-200/80">
+                    Create a <code className="px-1 py-0.5 bg-slate-950 rounded text-amber-400 font-mono text-[11px]">.env</code> file with your Supabase credentials to enable account registration and data syncing. See <code className="px-1 py-0.5 bg-slate-950 rounded text-amber-400 font-mono text-[11px]">.env.example</code>.
+                  </p>
+                </div>
               </div>
             )}
 
