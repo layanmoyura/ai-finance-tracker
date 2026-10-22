@@ -1,6 +1,6 @@
 # Apex LifeOS: Personal ERP & AI Finance Engine
 
-A modern, serverless Personal ERP platform bridging personal wealth, physical movement telemetry, and daily life operations with zero monthly hosting costs. Built with **React 19**, **TypeScript**, **Vite 8**, **Tailwind CSS v4**, **Supabase** (PostgreSQL, Auth, Edge Functions), and **Google Gemini Flash** for natural language ledger automation and multi-currency intelligence.
+A modern, serverless Personal ERP platform bridging personal wealth, physical movement telemetry, and daily life operations with zero monthly hosting costs. Built with **React 19**, **TypeScript**, **Vite 8**, **Tailwind CSS v4**, **React Hook Form**, **Zod**, **Sonner**, **Supabase** (PostgreSQL, Auth, Edge Functions), and **Google Gemini Flash** for natural language ledger automation and multi-currency intelligence.
 
 <p align="center">
   <a href="docs/Apex_LifeOS_Technical_Documentation.pdf"><strong>📄 Technical Documentation (PDF)</strong></a> •
@@ -34,7 +34,7 @@ Most finance apps operate in isolation—they only track historical debits and c
 | **AI Ledger Logger & Voice** | Natural language voice & text expense entry across 40+ global currencies (`$`, `Rs`, `€`, `£`, `₹`, etc.) | Google Gemini 2.0 / 2.5 Flash + Web Speech API (17+ languages, live waveforms, auto-parse) with Multi-Layered Prompt Guard (adversarial regex scan, inert XML wrapping, schema validation) |
 | **Daily Tasks & Bills** | Operational to-dos with financial bridges | Checking off tasks logs ledger entries; cloud-synced with Supabase |
 | **Location & Timeline** | GPS velocity gauge, commute legs, dwell stops, and traffic-resilient transit detection | Haversine formula + traffic hysteresis + Route Simulator |
-| **Android Tracker APK** | Dedicated native Android background location beacon with Fused Location Provider, Room offline queue, and direct Supabase streaming | Eliminates mobile browser background sleep/Doze throttling; Zero-Exposure QR pairing, 1-tap encrypted token exchange, Keystore AES-256 storage, and zero manual parameter exposure |
+| **Android Tracker APK** | Dedicated native Android background location beacon with pure kinetic sensor velocity engine, Fused Location Provider, Room offline queue, and direct Supabase streaming | Eliminates mobile browser background sleep/Doze throttling; zero GPS Doppler reliance, hardware kinetic stationary lock, step cadence speed estimation, Zero-Exposure QR pairing, Keystore AES-256 storage, and zero manual parameter exposure |
 | **Geofenced Places** | Saved waypoints with proximity radii triggering contextual payment alerts on arrival | Integrated with Budgets, Tasks & IOUs; responsive top proximity banner |
 | **Financial Accounts** | Multi-account balance sheets (Checking, Savings, Cash, Credit Card) & transaction-wise undo | Strict `0.00` starting balance policy; account ledger & instant transaction-wise undo |
 | **Cash & ATM Vault** | In-hand physical cash wallet tracking, 1-click ATM withdrawals with bank auto-transfer, voice cash logging, and bill audits | Dedicated cash wallet balance, voice dictation, petty cash logging, and physical wallet reconciliation |
@@ -49,6 +49,8 @@ Most finance apps operate in isolation—they only track historical debits and c
 | **Help & Guide** | Comprehensive user-facing tutorial with step-by-step interactive instructions | Mobile swipeable chapter navigator, non-technical instructions |
 | **Module Reset Controls**| Independent 1-click Reset button per subsystem with confirmation dialogs | In-place deletion and calibration for all individual modules |
 | **Clean Auth & SPA Router** | Dynamic URL redirection, token param sanitation, and GitHub Pages 404 SPA fallback | Eliminates 404s after clicking email verify link, cleans address bar codes, and auto-registers device sessions |
+| **Form Validation & Toasts** | Type-safe form validation and luxury toast alerts across all ERP forms | React Hook Form + Zod (`validationSchemas.ts`) for strict field boundary verification; Sonner for glassmorphic alerts |
+| **Vitest Test Suite** | Automated unit testing with Happy-DOM environment | 32 unit tests across 5 test suites (Security Guard, Haversine/Velocity, Auth routing, Balance undo math, Zod schemas) |
 
 ---
 

@@ -20,9 +20,12 @@ Contributions, issues, and feature requests are welcome! Follow these guidelines
    ```bash
    npm run dev
    ```
-4. **Lint & Type Check:**
-   Verify TypeScript compilation and linting before committing:
+4. **Test, Lint & Type Check:**
+   Verify unit tests, TypeScript compilation, and linting before committing:
    ```bash
+   # Run automated unit test suite (Vitest + Happy-DOM)
+   npm test
+
    # Run full TypeScript compiler and Vite production build
    npm run build
 
@@ -83,12 +86,26 @@ When contributing to Apex LifeOS, you must strictly follow these platform invari
 * **Foreign Key Cleanup:** Any transaction rollback must automatically nullify references in dependent subsystems (`tasks.related_transaction_id`, `personal_assets.linked_transaction_id`, and `contacts_ledger.settled_transaction_id`).
 * **Audit Trail Telemetry:** All transaction undo actions—whether initiated by users or administrators—must record a non-personal audit event in the platform telemetry stream.
 
+### 9. Type-Safe Form Validation & Modern Toast Notifications
+* **Strict Zod Validation:** All user inputs and form submissions must be validated using Zod schemas defined in `src/services/validationSchemas.ts`.
+* **React Hook Form Integration:** Forms must use `react-hook-form` paired with `@hookform/resolvers/zod` (`useForm({ resolver: zodResolver(...) })`) to manage form state and render contextual inline field error messages.
+* **No Browser alert() Calls:** Never use synchronous, blocking browser `alert()` dialogues. All operations, validation errors, and success confirmations must be surfaced using **Sonner** toasts (`toast.success`, `toast.error`, `toast.warning`, `toast.info`).
+* **Backend Connection Resilience:** The application must never throw fatal unhandled exceptions when backend credentials are not yet supplied. Verify endpoints with `isSupabaseConfigured` and display non-blocking configuration banners pointing to `.env.example`.
+
+### 10. Android Companion & Pure Kinetic Telemetry Standards
+* **Zero GPS Doppler Reliance:** The companion daemon must never rely on GPS Doppler speed (`location.speed` / `location.hasSpeed()`). Velocity, motion gating, and transport mode classification must be driven exclusively by device kinetic sensors (`TYPE_LINEAR_ACCELERATION`, `TYPE_STEP_DETECTOR`, `TYPE_ACCELEROMETER`).
+* **Kinetic Stationary Lock:** When kinetic acceleration energy is $< 0.22\text{ m/s}^2$ and no footstep impulses occur, velocity must be strictly clamped to `0.0 km/h` to prevent false GPS drift and indoor jitter.
+* **Biometric Pedestrian Velocity:** Walking speed ($3.0 - 7.5\text{ km/h}$) must be derived from biometric kinetic step cadence via hardware `TYPE_STEP_DETECTOR`.
+* **Resilient Telemetry Ingestion:** `device_location_pings` RLS must allow background companion daemons to insert telemetry using the project anonymous key with a valid `user_id`. The web dashboard must maintain an active 3-second fallback polling cycle alongside Supabase Realtime subscriptions so that device telemetry reliably reaches the system even when WebSockets stall.
+
 ---
 
 ## 📋 Pre-Pull Request Checklist
 
+- [ ] `npm test` passes all 32 unit tests with zero failures.
 - [ ] `npm run build` succeeds with zero TypeScript or Vite errors.
 - [ ] `npm run lint` reports zero linter errors.
+- [ ] All user forms adhere to Zod schema validation and trigger Sonner toast alerts.
 - [ ] Responsive UI verified on mobile (360px - 414px), tablet (768px), and desktop (1280px+).
 - [ ] No regression in single-device session lock (including admin disable toggle) or geofence proximity alerts.
 - [ ] Atomic balance rollback and foreign key cleanup verified across transaction undo flows.

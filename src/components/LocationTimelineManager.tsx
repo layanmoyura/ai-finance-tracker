@@ -216,34 +216,13 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
     }
   }, [accounts, commuteAccountId]);
 
-  // 2.0 Remote Phone APK Realtime Stream Watcher
+  // 2.0 Remote Phone APK Realtime Stream Watcher & Active Poller
   useEffect(() => {
     if (trackingSource !== 'phone_apk' || !isTracking || !userId) return;
 
     setStatusMessage('Connecting to Android APK background stream...');
 
-    loadLatestDevicePing(userId).then((ping) => {
-      if (ping) {
-        setLatestPhonePing(ping);
-        const coords = { latitude: ping.latitude, longitude: ping.longitude };
-        setCurrentCoords(coords);
-        simAnchorCoords.current = coords;
-        setCurrentSpeedKmh(ping.speed_kmh);
-        if (ping.transport_mode && ping.transport_mode !== 'unknown') {
-          setClassifiedMode(ping.transport_mode as TransportMode);
-        }
-        const battText = ping.battery_level !== null && ping.battery_level !== undefined
-          ? ` • 🔋 ${Math.round(ping.battery_level)}%`
-          : '';
-        setStatusMessage(
-          `Phone APK Active: ${ping.device_name || 'Android Device'} (${ping.speed_kmh.toFixed(1)} km/h • ${ping.transport_mode || 'moving'}${battText})`
-        );
-      } else {
-        setStatusMessage('Waiting for first location ping from Android APK...');
-      }
-    });
-
-    const unsubscribe = subscribeToDevicePings(userId, (ping) => {
+    const applyPing = (ping: DeviceLocationPing) => {
       setLatestPhonePing(ping);
       const coords = { latitude: ping.latitude, longitude: ping.longitude };
       setCurrentCoords(coords);
@@ -259,12 +238,36 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
         : '';
 
       setStatusMessage(
-        `Live Phone Fix: ${ping.speed_kmh.toFixed(1)} km/h (${ping.transport_mode || 'moving'})${battLabel}`
+        `Phone APK Live: ${ping.device_name || 'Android Device'} (${ping.speed_kmh.toFixed(1)} km/h • ${ping.transport_mode || 'moving'}${battLabel})`
       );
+    };
+
+    // 1. Initial fix query
+    loadLatestDevicePing(userId).then((ping) => {
+      if (ping) {
+        applyPing(ping);
+      } else {
+        setStatusMessage('Waiting for first location ping from Android APK...');
+      }
     });
+
+    // 2. Realtime WebSocket subscription
+    const unsubscribe = subscribeToDevicePings(userId, (ping) => {
+      applyPing(ping);
+    });
+
+    // 3. Active fallback polling (every 3s) ensuring Android telemetry reaches the system even when WebSockets stall
+    const pollInterval = setInterval(() => {
+      loadLatestDevicePing(userId).then((ping) => {
+        if (ping) {
+          applyPing(ping);
+        }
+      });
+    }, 3000);
 
     return () => {
       unsubscribe();
+      clearInterval(pollInterval);
     };
   }, [trackingSource, isTracking, userId]);
 

@@ -24,14 +24,22 @@ CREATE TABLE IF NOT EXISTS public.device_location_pings (
 -- 2. Row Level Security (RLS)
 ALTER TABLE public.device_location_pings ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can insert own location pings"
+-- Allow authenticated users OR paired mobile companion daemons (via anon key with valid user_id) to stream pings
+DROP POLICY IF EXISTS "Users can insert own location pings" ON public.device_location_pings;
+DROP POLICY IF EXISTS "Allow device location ping insertion" ON public.device_location_pings;
+CREATE POLICY "Allow device location ping insertion"
     ON public.device_location_pings FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
+    WITH CHECK (
+        (auth.uid() = user_id) OR 
+        (auth.role() = 'anon' AND user_id IS NOT NULL)
+    );
 
+DROP POLICY IF EXISTS "Users can view own location pings" ON public.device_location_pings;
 CREATE POLICY "Users can view own location pings"
     ON public.device_location_pings FOR SELECT
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own location pings" ON public.device_location_pings;
 CREATE POLICY "Users can delete own location pings"
     ON public.device_location_pings FOR DELETE
     USING (auth.uid() = user_id);
