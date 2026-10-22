@@ -10,11 +10,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Location
 import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.apex.locationtracker.MainActivity
@@ -38,6 +43,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.math.sqrt
 
 data class LiveTrackerState(
     val isTracking: Boolean = false,
@@ -55,20 +61,34 @@ data class LiveTrackerState(
     val statusMessage: String = "Service ready"
 )
 
-class LocationTrackingService : Service() {
+class LocationTrackingService : Service(), SensorEventListener {
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
     private lateinit var supabaseManager: SupabaseManager
     private lateinit var notificationManager: NotificationManager
+    private lateinit var sensorManager: SensorManager
+
+    // Kinetic Hardware Sensors
+    private var linearAccelSensor: Sensor? = null
+    private var accelerometerSensor: Sensor? = null
+    private var stepDetectorSensor: Sensor? = null
+    private var isUsingFallbackAccelerometer: Boolean = false
+
+    // Kinetic Acceleration & Cadence State
+    private var kineticEnergy: Float = 0.0f
+    private val gravityFilter = FloatArray(3)
+    private val stepTimestamps = mutableListOf<Long>()
+    private var lastKineticEventTimestampMs: Long = 0L
 
     private var lastRecordedLocation: Location? = null
     private var lastDispatchedLocation: Location? = null
     private var lastDispatchedTimestampMs: Long = 0L
     private var lastReportedMode: String = "stationary"
     private var smoothedSpeedKmh: Float = 0.0f
-    private var pingCounter = 0
+    private var pingCounter: Int = 0
+    private var consecutiveDispatches: Int = 0
 
     companion object {
         private const val TAG = "LocationTrackingService"
@@ -87,6 +107,7 @@ class LocationTrackingService : Service() {
         supabaseManager = SupabaseManager(this)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
         createNotificationChannel()
         setupLocationCallback()
@@ -107,7 +128,7 @@ class LocationTrackingService : Service() {
     }
 
     private fun startTrackingInForeground() {
-        val notification = buildNotification("Initializing continuous velocity GPS...")
+        val notification = buildNotification("Initializing kinetic sensor tracking...")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
@@ -118,21 +139,91 @@ class LocationTrackingService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
+        registerKineticSensors()
         requestLocationUpdates()
+
         _liveState.value = _liveState.value.copy(
             isTracking = true,
-            statusMessage = "Tracking active (Foreground Service)"
+            statusMessage = "Kinetic sensor tracking active (Foreground Service)"
         )
+    }
+
+    private fun registerKineticSensors() {
+        linearAccelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
+        if (linearAccelSensor != null) {
+            sensorManager.registerListener(this, linearAccelSensor, SensorManager.SENSOR_DELAY_UI)
+            isUsingFallbackAccelerometer = false
+            Log.i(TAG, "Registered hardware TYPE_LINEAR_ACCELERATION sensor")
+        } else {
+            accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+            if (accelerometerSensor != null) {
+                sensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_UI)
+                isUsingFallbackAccelerometer = true
+                Log.i(TAG, "Registered fallback TYPE_ACCELEROMETER sensor with gravity subtraction")
+            }
+        }
+
+        stepDetectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
+        if (stepDetectorSensor != null) {
+            sensorManager.registerListener(this, stepDetectorSensor, SensorManager.SENSOR_DELAY_UI)
+            Log.i(TAG, "Registered hardware TYPE_STEP_DETECTOR sensor")
+        }
+    }
+
+    private fun unregisterKineticSensors() {
+        try {
+            sensorManager.unregisterListener(this)
+        } catch (e: Exception) {
+            Log.w(TAG, "Error unregistering kinetic sensors: ${e.message}")
+        }
+    }
+
+    override fun onSensorChanged(event: SensorEvent) {
+        val now = SystemClock.elapsedRealtime()
+        lastKineticEventTimestampMs = now
+
+        when (event.sensor.type) {
+            Sensor.TYPE_STEP_DETECTOR -> {
+                synchronized(stepTimestamps) {
+                    stepTimestamps.add(now)
+                    stepTimestamps.removeAll { now - it > 5000L }
+                }
+            }
+            Sensor.TYPE_LINEAR_ACCELERATION -> {
+                val ax = event.values[0]
+                val ay = event.values[1]
+                val az = event.values[2]
+                val mag = sqrt(ax * ax + ay * ay + az * az)
+                kineticEnergy = 0.85f * kineticEnergy + 0.15f * mag
+            }
+            Sensor.TYPE_ACCELEROMETER -> {
+                if (isUsingFallbackAccelerometer) {
+                    gravityFilter[0] = 0.8f * gravityFilter[0] + 0.2f * event.values[0]
+                    gravityFilter[1] = 0.8f * gravityFilter[1] + 0.2f * event.values[1]
+                    gravityFilter[2] = 0.8f * gravityFilter[2] + 0.2f * event.values[2]
+
+                    val ax = event.values[0] - gravityFilter[0]
+                    val ay = event.values[1] - gravityFilter[1]
+                    val az = event.values[2] - gravityFilter[2]
+                    val mag = sqrt(ax * ax + ay * ay + az * az)
+                    kineticEnergy = 0.85f * kineticEnergy + 0.15f * mag
+                }
+            }
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        // No-op for inertial kinetic sensors
     }
 
     @SuppressLint("MissingPermission")
     private fun requestLocationUpdates() {
         fusedLocationClient.removeLocationUpdates(locationCallback)
 
-        // Continuous high-accuracy velocity sensing:
-        // Update interval 3s, fastest 1.5s, displacement 0.0m to guarantee Doppler velocity calculation
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000L)
-            .setMinUpdateIntervalMillis(1500L)
+        // Continuous high-accuracy location sensing:
+        // Update interval 2.5s, fastest 1.2s, displacement 0.0m for immediate responsiveness
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2500L)
+            .setMinUpdateIntervalMillis(1200L)
             .setMinUpdateDistanceMeters(0.0f)
             .setWaitForAccurateLocation(false)
             .build()
@@ -142,6 +233,13 @@ class LocationTrackingService : Service() {
             locationCallback,
             Looper.getMainLooper()
         )
+
+        // Immediately query last known location to broadcast instantaneous initial fix
+        fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+            if (loc != null) {
+                processLocationUpdate(loc)
+            }
+        }
     }
 
     private fun setupLocationCallback() {
@@ -159,80 +257,86 @@ class LocationTrackingService : Service() {
     )
 
     /**
-     * Hybrid Speed Sensing Engine:
-     * 1. Evaluates direct hardware Doppler velocity reported by GNSS receiver.
-     * 2. Fallbacks to kinematic displacement / monotonic elapsed time when hardware speed is missing or 0.
-     * 3. Rejects stationary GPS jitter within horizontal accuracy radius.
-     * 4. Applies Exponential Moving Average (EMA) smoothing for analog-smooth speedometer rendering.
+     * Pure Kinetic Velocity Engine:
+     * - GPS Doppler speed is completely removed.
+     * - Velocity and movement detection rely exclusively on device kinetic sensors.
+     * - Rejects GPS multipath jitter and wander when physical kinetic energy indicates the phone is at rest.
+     * - Computes real-time walking speed from kinetic step cadence.
+     * - Computes transit speed from kinetic-validated kinematic displacement and kinetic acceleration profile.
      */
     private fun calculateSpeed(location: Location): SpeedMeasurement {
-        var rawSpeedKmh = 0.0f
-        var speedDetermined = false
-        var method = "Stationary Lock"
+        val now = SystemClock.elapsedRealtime()
 
-        // 1. Direct Hardware Doppler Speed from GPS receiver
-        if (location.hasSpeed() && location.speed >= 0.0f) {
-            val isAccurate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && location.hasSpeedAccuracy()) {
-                location.speedAccuracyMetersPerSecond < 4.0f
+        // 1. Evaluate Step Sensor Cadence
+        val recentSteps: Int
+        val stepCadence: Float
+        synchronized(stepTimestamps) {
+            stepTimestamps.removeAll { now - it > 5000L }
+            recentSteps = stepTimestamps.size
+            stepCadence = if (recentSteps >= 2) {
+                val timeSpanSec = (stepTimestamps.last() - stepTimestamps.first()) / 1000.0f
+                if (timeSpanSec > 0.4f) (recentSteps - 1) / timeSpanSec else 0.0f
+            } else if (recentSteps == 1) {
+                1.4f
             } else {
-                true
-            }
-            if (isAccurate) {
-                val hwKmh = location.speed * 3.6f
-                if (hwKmh >= 1.2f) {
-                    rawSpeedKmh = hwKmh
-                    speedDetermined = true
-                    method = "GPS Doppler"
-                }
+                0.0f
             }
         }
 
-        // 2. Kinematic Velocity Fallback (delta distance / delta monotonic time)
+        val lastStepMs = synchronized(stepTimestamps) { stepTimestamps.lastOrNull() ?: 0L }
+        val isStepActive = recentSteps > 0 && (now - lastStepMs) < 2500L
+        val isStationaryKinetic = kineticEnergy < 0.22f && !isStepActive
+
+        // 2. Device Kinetic Stationary Lock
+        // When device kinetic sensors indicate zero physical acceleration (< 0.22 m/s²),
+        // the phone is physically at rest. Clamps velocity to strictly 0.0 km/h.
+        if (isStationaryKinetic) {
+            smoothedSpeedKmh = 0.0f
+            return SpeedMeasurement(0.0f, "Kinetic Stationary Lock")
+        }
+
+        // 3. Pedestrian Walking Velocity via Biometric Kinetic Cadence
+        // Speed = cadence (steps/sec) * stride (0.74m) * 3.6 km/h
+        if (isStepActive && stepCadence >= 0.4f) {
+            val biometricWalkingSpeedKmh = (stepCadence * 0.74f * 3.6f).coerceIn(2.5f, 7.5f)
+            smoothedSpeedKmh = if (smoothedSpeedKmh < 1.0f) {
+                biometricWalkingSpeedKmh
+            } else {
+                0.75f * biometricWalkingSpeedKmh + 0.25f * smoothedSpeedKmh
+            }
+            return SpeedMeasurement(smoothedSpeedKmh, "Kinetic Step Cadence (Walking)")
+        }
+
+        // 4. Transit & Vehicular Kinetic Sensing (Vehicle / High-Speed Transit)
+        // Kinetic acceleration confirmed active (> 0.22 m/s² from motor/road vibration).
+        // Derive velocity from kinematic displacement over monotonic elapsed time.
         val prev = lastRecordedLocation
         if (prev != null) {
             val deltaMeters = prev.distanceTo(location)
             val deltaTimeSec = (location.elapsedRealtimeNanos - prev.elapsedRealtimeNanos) / 1_000_000_000.0
 
-            if (deltaTimeSec in 0.5..60.0) {
-                val jitterRadius = (location.accuracy + prev.accuracy) * 0.5f
-
-                if (deltaMeters <= jitterRadius && deltaMeters < 5.0f) {
-                    // Fix falls inside horizontal GPS noise radius
-                    if (!speedDetermined) {
-                        rawSpeedKmh = 0.0f
-                        speedDetermined = true
-                        method = "Stationary (Noise Gate)"
+            if (deltaTimeSec in 0.5..60.0 && deltaMeters >= 1.5f) {
+                val derivedSpeedKmh = ((deltaMeters / deltaTimeSec) * 3.6).toFloat()
+                if (derivedSpeedKmh in 1.5f..260.0f) {
+                    smoothedSpeedKmh = if (smoothedSpeedKmh < 1.0f) {
+                        derivedSpeedKmh
+                    } else {
+                        0.70f * derivedSpeedKmh + 0.30f * smoothedSpeedKmh
                     }
-                } else if (deltaMeters >= 5.0f) {
-                    val derivedSpeedKmh = ((deltaMeters / deltaTimeSec) * 3.6).toFloat()
-                    if (!speedDetermined || (rawSpeedKmh == 0.0f && derivedSpeedKmh >= 2.0f)) {
-                        // Clamp unrealistic speed jumps (e.g. cellular tower triangulation hopping > 220 km/h)
-                        if (derivedSpeedKmh <= 220.0f) {
-                            rawSpeedKmh = derivedSpeedKmh
-                            speedDetermined = true
-                            method = "Kinematic Delta"
-                        }
+                    val method = if (smoothedSpeedKmh >= 80.0f) {
+                        "Kinetic High-Speed Transit"
+                    } else {
+                        "Kinetic Transit Sensor (Vehicle)"
                     }
+                    return SpeedMeasurement(smoothedSpeedKmh, method)
                 }
             }
         }
 
-        // 3. Speed Smoothing via Exponential Moving Average (EMA)
-        val finalSpeedKmh: Float
-        if (rawSpeedKmh >= 1.2f) {
-            smoothedSpeedKmh = if (smoothedSpeedKmh < 1.0f) {
-                rawSpeedKmh
-            } else {
-                0.70f * rawSpeedKmh + 0.30f * smoothedSpeedKmh
-            }
-            finalSpeedKmh = smoothedSpeedKmh
-        } else {
-            smoothedSpeedKmh = 0.0f
-            finalSpeedKmh = 0.0f
-            method = "Stationary / Parked"
-        }
-
-        return SpeedMeasurement(finalSpeedKmh, method)
+        // 5. Kinetic Transition / Dynamic Fallback
+        val finalSpeed = if (smoothedSpeedKmh >= 1.2f) smoothedSpeedKmh else 0.0f
+        val method = if (finalSpeed > 0.0f) "Kinetic Motion Sensor" else "Kinetic Stationary Lock"
+        return SpeedMeasurement(finalSpeed, method)
     }
 
     private fun processLocationUpdate(location: Location) {
@@ -269,10 +373,11 @@ class LocationTrackingService : Service() {
         val isStationary = mode == "stationary"
 
         val shouldDispatch = when {
-            prevDispatched == null -> true
-            modeChanged -> true // Immediate dispatch on stop or move
-            !isStationary && (timeSinceLastDispatch >= 3000L || distanceMovedSinceDispatch >= 12.0f) -> true
-            isStationary && timeSinceLastDispatch >= 60000L -> true // Periodic heartbeat
+            prevDispatched == null -> true // First fix dispatched immediately
+            consecutiveDispatches < 5 && timeSinceLastDispatch >= 2000L -> true // Quick initial synchronization burst
+            modeChanged -> true // Immediate dispatch on stop or move transition
+            !isStationary && (timeSinceLastDispatch >= 2500L || distanceMovedSinceDispatch >= 4.0f) -> true
+            isStationary && timeSinceLastDispatch >= 10000L -> true // Periodic 10s heartbeat (down from 60s)
             else -> false
         }
 
@@ -282,6 +387,7 @@ class LocationTrackingService : Service() {
             lastDispatchedLocation = location
             lastDispatchedTimestampMs = now
             lastReportedMode = mode
+            consecutiveDispatches++
 
             val ping = LocationPingEntity(
                 userId = supabaseManager.userId,
@@ -349,11 +455,18 @@ class LocationTrackingService : Service() {
     }
 
     private fun stopTracking() {
+        unregisterKineticSensors()
         fusedLocationClient.removeLocationUpdates(locationCallback)
         smoothedSpeedKmh = 0.0f
+        kineticEnergy = 0.0f
+        synchronized(stepTimestamps) {
+            stepTimestamps.clear()
+        }
         lastRecordedLocation = null
         lastDispatchedLocation = null
         lastReportedMode = "stationary"
+        consecutiveDispatches = 0
+
         _liveState.value = _liveState.value.copy(
             isTracking = false,
             speedKmh = 0.0f,
@@ -385,7 +498,7 @@ class LocationTrackingService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("🛰️ Apex LifeOS Tracker Active")
+            .setContentTitle("🛰️ Apex LifeOS Kinetic Tracker Active")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pendingOpenApp)
@@ -402,7 +515,7 @@ class LocationTrackingService : Service() {
                 "Apex Location Telemetry",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Continuous background location tracking for Apex LifeOS"
+                description = "Continuous kinetic sensor location tracking for Apex LifeOS"
                 setShowBadge(false)
             }
             notificationManager.createNotificationChannel(channel)

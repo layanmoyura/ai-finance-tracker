@@ -274,7 +274,29 @@ ALTER TABLE public.device_location_pings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users manage own saved places" ON public.saved_places FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users manage own mobility events" ON public.mobility_timeline_events FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users manage own mobility stats" ON public.daily_mobility_stats FOR ALL USING (auth.uid() = user_id);
+-- Allow authenticated users to view/manage their location pings
 CREATE POLICY "Users manage own location pings" ON public.device_location_pings FOR ALL USING (auth.uid() = user_id);
+
+-- Allow paired mobile companion daemons (via anon key with valid user_id) to stream pings
+CREATE POLICY "Allow device location ping insertion" ON public.device_location_pings FOR INSERT WITH CHECK (
+    (auth.uid() = user_id) OR 
+    (auth.role() = 'anon' AND user_id IS NOT NULL)
+);
+
+-- Realtime Publication for Live Telemetry Dashboard
+DO $ 
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_publication_tables 
+            WHERE pubname = 'supabase_realtime' 
+              AND schemaname = 'public' 
+              AND tablename = 'device_location_pings'
+        ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.device_location_pings;
+        END IF;
+    END IF;
+END $;
 
 -- Performance & Hardware Isolation Indexes
 CREATE INDEX IF NOT EXISTS idx_saved_places_user ON public.saved_places(user_id);

@@ -92,6 +92,12 @@ When contributing to Apex LifeOS, you must strictly follow these platform invari
 * **No Browser alert() Calls:** Never use synchronous, blocking browser `alert()` dialogues. All operations, validation errors, and success confirmations must be surfaced using **Sonner** toasts (`toast.success`, `toast.error`, `toast.warning`, `toast.info`).
 * **Backend Connection Resilience:** The application must never throw fatal unhandled exceptions when backend credentials are not yet supplied. Verify endpoints with `isSupabaseConfigured` and display non-blocking configuration banners pointing to `.env.example`.
 
+### 10. Android Companion & Pure Kinetic Telemetry Standards
+* **Zero GPS Doppler Reliance:** The companion daemon must never rely on GPS Doppler speed (`location.speed` / `location.hasSpeed()`). Velocity, motion gating, and transport mode classification must be driven exclusively by device kinetic sensors (`TYPE_LINEAR_ACCELERATION`, `TYPE_STEP_DETECTOR`, `TYPE_ACCELEROMETER`).
+* **Kinetic Stationary Lock:** When kinetic acceleration energy is $< 0.22\text{ m/s}^2$ and no footstep impulses occur, velocity must be strictly clamped to `0.0 km/h` to prevent false GPS drift and indoor jitter.
+* **Biometric Pedestrian Velocity:** Walking speed ($3.0 - 7.5\text{ km/h}$) must be derived from biometric kinetic step cadence via hardware `TYPE_STEP_DETECTOR`.
+* **Resilient Telemetry Ingestion:** `device_location_pings` RLS must allow background companion daemons to insert telemetry using the project anonymous key with a valid `user_id`. The web dashboard must maintain an active 3-second fallback polling cycle alongside Supabase Realtime subscriptions so that device telemetry reliably reaches the system even when WebSockets stall.
+
 ---
 
 ## 📋 Pre-Pull Request Checklist

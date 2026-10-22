@@ -238,7 +238,12 @@ Traditional personal finance apps only track what you spent *after* you've alrea
 
 To solve mobile browser background tab throttling and Doze mode process freezing when your phone screen locks or rests in your pocket, Apex LifeOS includes a dedicated, lightweight native Android companion application:
 
-* **High-Precision Fused Location**: Google Play Services **Fused Location Provider** with dynamic adaptive rate shifting ($8–15\text{s}$ during vehicle transit; $90\text{s}–3\text{m}$ stationary to consume $<2\%$ battery per 8 hours).
+* **High-Precision Fused Location & Instant Fix**: Google Play Services **Fused Location Provider** with immediate cached fix broadcasting upon foreground service launch.
+* **Pure Kinetic Sensor Velocity Engine (Zero GPS Doppler Reliance)**:
+  * Completely removes unreliable GNSS Doppler velocity calculations that cause zero-speed lockouts and phase dropouts.
+  * Uses hardware `TYPE_LINEAR_ACCELERATION` / `TYPE_ACCELEROMETER` (excluding gravity bias). When kinetic acceleration energy is $< 0.22\text{ m/s}^2$, velocity is strictly clamped to $0.0\text{ km/h}$, eliminating GPS drift, jitter, and desk wandering.
+  * Calculates real-time pedestrian walking speed ($3.0 - 7.5\text{ km/h}$) from biometric kinetic step cadence via hardware `TYPE_STEP_DETECTOR`.
+  * Computes motorized transit velocity via kinetic-gated displacement over monotonic elapsed time.
 * **Native Foreground Service**: Runs an ongoing status bar notification (`FOREGROUND_SERVICE_LOCATION`), preventing Android from terminating telemetry acquisition.
 * **Offline SQLite Queue**: Embedded **Room** database ensures zero lost points during cellular dead-zones or tunnels, auto-flushing to Supabase upon reconnection.
 * **Direct Supabase Sync**: Streams live telemetry directly into `device_location_pings` and broadcasts via Supabase Realtime to the web dashboard.
