@@ -421,11 +421,13 @@ class LocationTrackingService : Service(), SensorEventListener {
                 } else {
                     val ex = result.exceptionOrNull()
                     val msg = ex?.message ?: "Error"
+                    val detail = msg.substringAfter(": ").trim().take(35)
                     statusText = when {
                         msg.contains("Not Configured", ignoreCase = true) -> "Not Paired"
-                        msg.contains("HTTP 401", ignoreCase = true) -> "HTTP 401 (Auth Failed)"
-                        msg.contains("HTTP 403", ignoreCase = true) -> "HTTP 403 (Perm Denied)"
-                        msg.contains("HTTP 400", ignoreCase = true) -> "HTTP 400 (Bad Format)"
+                        msg.contains("HTTP 401", ignoreCase = true) -> if (detail.isNotBlank() && !detail.startsWith("HTTP")) "HTTP 401 ($detail)" else "HTTP 401 (Auth Failed)"
+                        msg.contains("HTTP 403", ignoreCase = true) -> if (detail.isNotBlank() && !detail.startsWith("HTTP")) "HTTP 403 ($detail)" else "HTTP 403 (Perm Denied)"
+                        msg.contains("HTTP 400", ignoreCase = true) -> if (detail.isNotBlank() && !detail.startsWith("HTTP")) "HTTP 400 ($detail)" else "HTTP 400 (Bad Request)"
+                        msg.contains("HTTP 409", ignoreCase = true) -> "HTTP 409 ($detail)"
                         else -> "Offline Cached ($currentOffline queued)"
                     }
                 }

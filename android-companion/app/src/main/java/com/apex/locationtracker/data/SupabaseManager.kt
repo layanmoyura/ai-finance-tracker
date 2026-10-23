@@ -116,6 +116,34 @@ class SupabaseManager private constructor(context: Context) {
                 INSTANCE ?: SupabaseManager(context.applicationContext).also { INSTANCE = it }
             }
         }
+
+        fun isValidUuid(str: String): Boolean {
+            return try {
+                UUID.fromString(str.trim())
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        fun parseSupabaseError(rawError: String): String {
+            return try {
+                val jsonStart = rawError.indexOf('{')
+                val jsonEnd = rawError.lastIndexOf('}')
+                if (jsonStart != -1 && jsonEnd != -1 && jsonEnd > jsonStart) {
+                    val jsonPart = rawError.substring(jsonStart, jsonEnd + 1)
+                    val obj = JsonParser.parseString(jsonPart).asJsonObject
+                    obj.get("message")?.asString
+                        ?: obj.get("hint")?.asString
+                        ?: obj.get("details")?.asString
+                        ?: rawError.take(80)
+                } else {
+                    rawError.take(80)
+                }
+            } catch (_: Exception) {
+                rawError.take(80)
+            }
+        }
     }
 
     var supabaseUrl: String
@@ -178,9 +206,13 @@ class SupabaseManager private constructor(context: Context) {
             val uid = jsonObj.get("uid")?.asString ?: return false
 
             if (url.isNotBlank() && key.isNotBlank() && uid.isNotBlank()) {
+                val trimmedUid = uid.trim()
+                if (!isValidUuid(trimmedUid)) {
+                    Log.w(TAG, "Pairing token contains non-standard UUID format: $trimmedUid")
+                }
                 supabaseUrl = url
                 anonKey = key
-                userId = uid
+                userId = trimmedUid
                 Log.i(TAG, "Pairing token imported successfully. Configured user: ${getMaskedUserId()}")
                 return true
             }
@@ -269,7 +301,8 @@ class SupabaseManager private constructor(context: Context) {
                     Result.success(true)
                 } else {
                     val code = response.code
-                    val msg = response.body?.string() ?: response.message
+                    val rawBody = response.body?.string() ?: response.message
+                    val msg = parseSupabaseError(rawBody)
                     Result.failure(IOException("HTTP $code: $msg"))
                 }
             }
@@ -280,8 +313,9 @@ class SupabaseManager private constructor(context: Context) {
 
     /**
      * Sends a single ping to Supabase.
-     * If network fails or server is temporarily unavailable, queues into Room database.
-     * Unconfigured or permanent client format errors (4xx) are NOT cached as poison pills.
+     * Uses standard PostgREST insert ('Prefer: return=minimal') without upsert conflict requirements.
+     * If network fails or server is temporarily unavailable (5xx/429), queues into Room database.
+     * Permanent client format/auth errors (4xx) are NOT cached as poison pills.
      */
     suspend fun dispatchPing(ping: LocationPingEntity): Result<Int> = withContext(Dispatchers.IO) {
         if (!isConfigured) {
@@ -301,12 +335,13 @@ class SupabaseManager private constructor(context: Context) {
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val body = jsonPayload.toRequestBody(mediaType)
 
+        // Standard PostgREST insert: clean 'Prefer: return=minimal' without upsert clauses
         val request = Request.Builder()
             .url(endpoint)
             .addHeader("apikey", anonKey)
             .addHeader("Authorization", "Bearer $anonKey")
             .addHeader("Content-Type", "application/json")
-            .addHeader("Prefer", "return=minimal, resolution=ignore-duplicates")
+            .addHeader("Prefer", "return=minimal")
             .post(body)
             .build()
 
@@ -319,8 +354,9 @@ class SupabaseManager private constructor(context: Context) {
                     return@withContext Result.success(response.code)
                 } else {
                     val code = response.code
-                    val err = response.body?.string() ?: "Empty body"
-                    Log.w(TAG, "Supabase rejected ping: HTTP $code - $err")
+                    val rawBody = response.body?.string() ?: ""
+                    val errDetail = parseSupabaseError(rawBody)
+                    Log.w(TAG, "Supabase rejected ping: HTTP $code - $rawBody")
 
                     // Only cache in Room if server-side transient failure (5xx or 429 rate limit)
                     // Do NOT poison Room database with 4xx client authentication or schema errors
@@ -329,7 +365,7 @@ class SupabaseManager private constructor(context: Context) {
                         Log.i(TAG, "Cached ping locally due to server error HTTP $code")
                     }
 
-                    return@withContext Result.failure(IOException("HTTP $code: $err"))
+                    return@withContext Result.failure(IOException("HTTP $code: $errDetail"))
                 }
             }
         } catch (e: Exception) {
@@ -342,7 +378,7 @@ class SupabaseManager private constructor(context: Context) {
 
     /**
      * Flushes offline cached pings in batches of up to 50.
-     * Automatically sanitizes blank user IDs, ignores duplicates, and purges poison pills.
+     * Uses target on_conflict=id for upsert idempotency with automatic fallback to standard batch insert.
      */
     suspend fun flushOfflineQueue(): Result<Int> = withContext(Dispatchers.IO) {
         if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase not configured"))
@@ -363,12 +399,13 @@ class SupabaseManager private constructor(context: Context) {
 
         Log.i(TAG, "Attempting to flush ${validPings.size} cached pings to Supabase...")
         val jsonPayload = gson.toJson(validPings)
-        val endpoint = "$supabaseUrl/rest/v1/device_location_pings"
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val body = jsonPayload.toRequestBody(mediaType)
 
-        val request = Request.Builder()
-            .url(endpoint)
+        // 1. Try upsert with on_conflict=id
+        val upsertEndpoint = "$supabaseUrl/rest/v1/device_location_pings?on_conflict=id"
+        val upsertRequest = Request.Builder()
+            .url(upsertEndpoint)
             .addHeader("apikey", anonKey)
             .addHeader("Authorization", "Bearer $anonKey")
             .addHeader("Content-Type", "application/json")
@@ -377,8 +414,26 @@ class SupabaseManager private constructor(context: Context) {
             .build()
 
         try {
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
+            var response = client.newCall(upsertRequest).execute()
+
+            // If PostgREST rejects the on_conflict preference with HTTP 400, fallback to standard batch insert
+            if (response.code == 400) {
+                response.close()
+                Log.w(TAG, "Upsert on_conflict rejected by PostgREST with HTTP 400, falling back to standard batch insert...")
+                val fallbackEndpoint = "$supabaseUrl/rest/v1/device_location_pings"
+                val fallbackRequest = Request.Builder()
+                    .url(fallbackEndpoint)
+                    .addHeader("apikey", anonKey)
+                    .addHeader("Authorization", "Bearer $anonKey")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Prefer", "return=minimal")
+                    .post(body)
+                    .build()
+                response = client.newCall(fallbackRequest).execute()
+            }
+
+            response.use { resp ->
+                if (resp.isSuccessful) {
                     dao.deletePings(pending)
                     Log.i(TAG, "Successfully flushed ${validPings.size} offline pings.")
 
@@ -389,16 +444,17 @@ class SupabaseManager private constructor(context: Context) {
                     }
                     return@withContext Result.success(validPings.size)
                 } else {
-                    val code = response.code
-                    val err = response.body?.string() ?: ""
-                    Log.w(TAG, "Failed to flush offline queue: HTTP $code - $err")
+                    val code = resp.code
+                    val rawBody = resp.body?.string() ?: ""
+                    val errDetail = parseSupabaseError(rawBody)
+                    Log.w(TAG, "Failed to flush offline queue: HTTP $code - $rawBody")
 
                     // If permanent client error (e.g. 400 Bad Request), purge the poison pills
                     if (code in 400..499 && code != 429) {
-                        Log.e(TAG, "Purging ${pending.size} cached pings rejected by Supabase with HTTP $code.")
+                        Log.e(TAG, "Purging ${pending.size} cached pings rejected by Supabase with HTTP $code ($errDetail).")
                         dao.deletePings(pending)
                     }
-                    return@withContext Result.failure(IOException("HTTP $code: $err"))
+                    return@withContext Result.failure(IOException("HTTP $code: $errDetail"))
                 }
             }
         } catch (e: Exception) {
