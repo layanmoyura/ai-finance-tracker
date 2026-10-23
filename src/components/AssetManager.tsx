@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { PersonalAsset, AssetCategory, AssetStatus } from '../types';
 import { supabase } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
+import { useAlert } from '../context/AlertContext';
 import {
   Package,
   Plus,
@@ -35,6 +36,7 @@ export const AssetManager: React.FC<AssetManagerProps> = ({
   onAssetsUpdated,
 }) => {
   const { formatCurrency, formatDate } = usePreferences();
+  const { showError, showWarning } = useAlert();
   const [isAdding, setIsAdding] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +71,10 @@ export const AssetManager: React.FC<AssetManagerProps> = ({
 
   const handleCreateAsset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setError('Please provide an asset name or label.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -137,7 +142,7 @@ export const AssetManager: React.FC<AssetManagerProps> = ({
 
   const handleResetAssets = async () => {
     if (assets.length === 0) {
-      alert('No assets in vault to reset.');
+      showWarning('No assets in vault to reset.', 'Empty Asset Vault');
       return;
     }
     if (
@@ -154,7 +159,7 @@ export const AssetManager: React.FC<AssetManagerProps> = ({
       if (error) throw error;
       onAssetsUpdated();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to reset assets');
+      showError(err instanceof Error ? err.message : 'Failed to reset assets', 'Asset Reset Failed');
     } finally {
       setIsResetting(false);
     }

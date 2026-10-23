@@ -226,7 +226,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
 
   const handleResetTasks = async () => {
     if (tasks.length === 0) {
-      alert('No tasks to reset.');
+      toast.info('No Tasks', { description: 'No tasks to reset.' });
       return;
     }
     if (
@@ -245,7 +245,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
       localStorage.removeItem('apex_marked_today');
       onTasksUpdated();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to reset tasks');
+      toast.error('Reset Failed', { description: err instanceof Error ? err.message : 'Failed to reset tasks' });
     } finally {
       setIsResetting(false);
     }

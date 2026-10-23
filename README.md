@@ -177,18 +177,20 @@ Traditional personal finance apps only track what you spent *after* you've alrea
 
 ### 17. 🛡️ Type-Safe Form Validation & Sonner Toast Notifications
 * **React Hook Form + Zod**: Enterprise-grade form state management and strict runtime schema validation via `react-hook-form` and `zod` with `@hookform/resolvers/zod`.
-* **Centralized Schema Architecture**: Canonical schemas in `src/services/validationSchemas.ts` enforce boundary constraints across all user inputs:
+* **Centralized Schema Architecture**: Canonical schemas in `src/services/validationSchemas.ts` enforce boundary constraints across user inputs:
   * `authSchema`: Format-verified email and $\ge 6$ character password length.
   * `accountSchema`: Non-empty account names and finite numerical starting balances.
   * `budgetSchema`: Category validation and strictly positive monthly spending limits.
   * `taskSchema`: Title length bounds, priority enums, and non-negative financial values.
-  * `transactionReviewSchema`, `assetSchema`, `subscriptionSchema`.
-* **Glassmorphic Toast Alerts**: Powered by **Sonner**, replacing legacy blocking browser `alert()` dialogues with rich-colored, accessible toasts (`toast.success`, `toast.error`, `toast.warning`, `toast.info`).
+  * `transactionReviewSchema`, `cashAuditSchema`, `savedPlaceSchema`.
+* **Glassmorphic Toast Alerts**: Powered by **Sonner** and unified through `AlertContext` (`useAlert()`), replacing legacy blocking browser `alert()` dialogues with rich-colored, accessible toasts (`toast.success`, `toast.error`, `toast.warning`, `toast.info`).
+* **Inline Form Validation Alerts**: Form modals across budgets, transactions, assets, subscriptions, tasks, and contacts feature `<UiAlert />` banners and inline field error hints for immediate feedback on invalid inputs.
+* **Global Interception Fallback**: Protects against unexpected or legacy `window.alert()` calls by automatically redirecting them into the non-blocking UI toast system.
 * **Zero-Crash Backend Sentinel**: Checks `isSupabaseConfigured` on startup; if `VITE_SUPABASE_URL` is unconfigured, displays an interactive guidance banner pointing to `.env.example` instead of throwing fatal unhandled runtime exceptions.
 
 ### 18. 🧪 Automated Vitest & Happy-DOM Test Suite
 * **Unit Test Engine**: Configured with **Vitest** and **Happy-DOM** for lightning-fast DOM and logic unit testing without browser overhead.
-* **100% Pass Rate Across 32 Specifications**:
+* **100% Pass Rate Across Specifications**:
   * `validationSchemas.test.ts`: Validates all Zod schemas, boundary conditions, and type coercions.
   * `aiSecurityGuard.test.ts`: Tests prompt injection defenses, zero-width space stripping, secret exfiltration halts, and output schema caps.
   * `authRedirectService.test.ts`: Tests URL token extraction, expired OTP link detection, and SPA base URL resolution.
@@ -292,8 +294,10 @@ ai-finance-tracker/
 │   │   ├── SplitBillModal.tsx           # Group bill splitter with UPI/Venmo/PayPal deep links
 │   │   ├── SubscriptionManager.tsx      # Recurring billing, cancellation links & reset
 │   │   ├── TaskManager.tsx              # Operations, financial task bridge & reset
-│   │   └── TransactionList.tsx          # Filterable ledger transactions, reset & transaction-wise undo
+│   │   ├── TransactionList.tsx          # Filterable ledger transactions, reset & transaction-wise undo
+│   │   └── UiAlert.tsx                  # Accessible inline validation alert component (Lucide + Tailwind)
 │   ├── context/
+│   │   ├── AlertContext.tsx             # Universal validation alerts & toast notification provider
 │   │   └── PreferencesContext.tsx       # Dynamic currency & theme context
 │   ├── hooks/
 │   │   └── useSpeechRecognition.ts      # Web Speech API voice typing & multi-language dictation

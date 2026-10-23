@@ -48,6 +48,7 @@ Most finance apps operate in isolation—they only track historical debits and c
 | **Device Sentinel** | Single active device login enforcement with admin disable option & hardware session release | Hardware UUID, session takeover guard, admin lock disable toggle, and continuous heartbeat sentinel |
 | **Help & Guide** | Comprehensive user-facing tutorial with step-by-step interactive instructions | Mobile swipeable chapter navigator, non-technical instructions |
 | **Module Reset Controls**| Independent 1-click Reset button per subsystem with confirmation dialogs | In-place deletion and calibration for all individual modules |
+| **Validation Alerts & Toast UI** | In-app notification stack & inline form validation alerts using existing UI libraries (Tailwind CSS + Lucide React) | 100% elimination of browser `alert()` pop-ups; toast queue with auto-dismiss and global fallback interception |
 | **Clean Auth & SPA Router** | Dynamic URL redirection, token param sanitation, and GitHub Pages 404 SPA fallback | Eliminates 404s after clicking email verify link, cleans address bar codes, and auto-registers device sessions |
 | **Form Validation & Toasts** | Type-safe form validation and luxury toast alerts across all ERP forms | React Hook Form + Zod (`validationSchemas.ts`) for strict field boundary verification; Sonner for glassmorphic alerts |
 | **Vitest Test Suite** | Automated unit testing with Happy-DOM environment | 32 unit tests across 5 test suites (Security Guard, Haversine/Velocity, Auth routing, Balance undo math, Zod schemas) |

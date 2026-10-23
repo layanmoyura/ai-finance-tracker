@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { ContactsLedger, Account, ContactDebtType } from '../types';
 import { supabase } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
+import { useAlert } from '../context/AlertContext';
 import { SplitBillModal } from './SplitBillModal';
 import {
   Users,
@@ -32,6 +33,7 @@ export const ContactsLedgerManager: React.FC<ContactsLedgerManagerProps> = ({
   onLedgerUpdated,
 }) => {
   const { formatCurrency, formatDate } = usePreferences();
+  const { showError, showWarning } = useAlert();
   const [isAdding, setIsAdding] = useState(false);
   const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -56,7 +58,14 @@ export const ContactsLedgerManager: React.FC<ContactsLedgerManagerProps> = ({
 
   const handleCreateEntry = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!contactName.trim() || !amount) return;
+    if (!contactName.trim()) {
+      setError('Please provide a contact name.');
+      return;
+    }
+    if (!amount || amount <= 0) {
+      setError('Please enter a valid amount greater than zero.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -165,7 +174,7 @@ export const ContactsLedgerManager: React.FC<ContactsLedgerManagerProps> = ({
 
   const handleResetLedger = async () => {
     if (contactsLedger.length === 0) {
-      alert('No contacts ledger entries to reset.');
+      showWarning('No contacts ledger entries to reset.', 'Ledger Already Empty');
       return;
     }
     if (
@@ -182,7 +191,7 @@ export const ContactsLedgerManager: React.FC<ContactsLedgerManagerProps> = ({
       if (error) throw error;
       onLedgerUpdated();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to reset contacts ledger');
+      showError(err instanceof Error ? err.message : 'Failed to reset contacts ledger', 'Reset Contacts Ledger Failed');
     } finally {
       setIsResetting(false);
     }

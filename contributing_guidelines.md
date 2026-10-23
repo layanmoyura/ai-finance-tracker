@@ -86,10 +86,12 @@ When contributing to Apex LifeOS, you must strictly follow these platform invari
 * **Foreign Key Cleanup:** Any transaction rollback must automatically nullify references in dependent subsystems (`tasks.related_transaction_id`, `personal_assets.linked_transaction_id`, and `contacts_ledger.settled_transaction_id`).
 * **Audit Trail Telemetry:** All transaction undo actions—whether initiated by users or administrators—must record a non-personal audit event in the platform telemetry stream.
 
-### 9. Type-Safe Form Validation & Modern Toast Notifications
+### 9. Type-Safe Form Validation, UI Alerts & Modern Toast Notifications
 * **Strict Zod Validation:** All user inputs and form submissions must be validated using Zod schemas defined in `src/services/validationSchemas.ts`.
 * **React Hook Form Integration:** Forms must use `react-hook-form` paired with `@hookform/resolvers/zod` (`useForm({ resolver: zodResolver(...) })`) to manage form state and render contextual inline field error messages.
-* **No Browser alert() Calls:** Never use synchronous, blocking browser `alert()` dialogues. All operations, validation errors, and success confirmations must be surfaced using **Sonner** toasts (`toast.success`, `toast.error`, `toast.warning`, `toast.info`).
+* **Zero Browser alert() Calls:** Never use synchronous, blocking browser `alert()` dialogues. All operations, validation errors, and success confirmations must be surfaced using **Sonner** toasts (`toast.success`, `toast.error`, `toast.warning`, `toast.info`) and `AlertContext` (`useAlert()`).
+* **Inline Modal Validation:** Form modals (budgets, transactions, assets, subscriptions, tasks, contacts) must render field validation errors inline with `<UiAlert />` banners or field hints (`AlertCircle`, `AlertTriangle`).
+* **Global Interceptor Fallback:** `AlertProvider` intercepts any legacy or residual `window.alert` calls and routes them safely into the non-blocking UI alert stack.
 * **Backend Connection Resilience:** The application must never throw fatal unhandled exceptions when backend credentials are not yet supplied. Verify endpoints with `isSupabaseConfigured` and display non-blocking configuration banners pointing to `.env.example`.
 
 ### 10. Android Companion & Pure Kinetic Telemetry Standards
@@ -109,6 +111,7 @@ When contributing to Apex LifeOS, you must strictly follow these platform invari
 - [ ] Responsive UI verified on mobile (360px - 414px), tablet (768px), and desktop (1280px+).
 - [ ] No regression in single-device session lock (including admin disable toggle) or geofence proximity alerts.
 - [ ] Atomic balance rollback and foreign key cleanup verified across transaction undo flows.
+- [ ] Zero native `alert()` calls: all notifications and form validations use `AlertContext` and `UiAlert`.
 - [ ] All new database operations adhere to Row-Level Security (RLS).
 - [ ] Markdown documentation (`README.md`, `project_readme.md`, `contributing_guidelines.md`, `database_schema.md`, `setup_guide.md`) updated to reflect all code and architectural changes.
 - [ ] Directory tree and module lists in `README.md` and `project_readme.md` reflect all newly created or updated files.

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import type { Transaction, Account, Category } from '../types';
 import { supabase } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
+import { useAlert } from '../context/AlertContext';
+import { UiAlert } from './UiAlert';
 import {
   Receipt,
   Search,
@@ -35,6 +37,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   categories,
   onTransactionsUpdated,
 }) => {
+  const { showError, showWarning, showSuccess } = useAlert();
+  const [manualError, setManualError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
@@ -94,7 +98,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
       onTransactionsUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to undo transaction';
-      alert(msg);
+      showError(msg, 'Transaction Undo Failed');
     } finally {
       setIsUndoing(false);
     }
@@ -102,7 +106,15 @@ export const TransactionList: React.FC<TransactionListProps> = ({
 
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manualAccountId || !manualAmount) return;
+    if (!manualAccountId) {
+      setManualError('Please select a payment account.');
+      return;
+    }
+    if (!manualAmount || manualAmount <= 0) {
+      setManualError('Please enter an amount greater than zero.');
+      return;
+    }
+    setManualError(null);
 
     setIsSubmittingManual(true);
     try {
@@ -129,10 +141,12 @@ export const TransactionList: React.FC<TransactionListProps> = ({
       setShowManualModal(false);
       setManualDescription('');
       setManualAmount(0);
+      showSuccess('Transaction recorded successfully.');
       onTransactionsUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to save transaction';
-      alert(msg);
+      setManualError(msg);
+      showError(msg, 'Transaction Save Failed');
     } finally {
       setIsSubmittingManual(false);
     }
@@ -142,7 +156,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
 
   const handleResetTransactions = async () => {
     if (transactions.length === 0) {
-      alert('No transactions to reset.');
+      showWarning('No transactions to reset.', 'Empty Ledger');
       return;
     }
     if (
@@ -160,7 +174,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
       onTransactionsUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to reset transactions';
-      alert(msg);
+      showError(msg, 'Transaction Reset Failed');
     } finally {
       setIsResetting(false);
     }
@@ -207,6 +221,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
               if (categories.length > 0 && !manualCategoryId) {
                 setManualCategoryId(categories[0].id);
               }
+              setManualError(null);
               setShowManualModal(true);
             }}
             className="text-xs font-semibold px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition cursor-pointer"
@@ -474,6 +489,13 @@ export const TransactionList: React.FC<TransactionListProps> = ({
             </div>
 
             <form onSubmit={handleManualSubmit} className="space-y-4">
+              {manualError && (
+                <UiAlert
+                  type="error"
+                  message={manualError}
+                  onClose={() => setManualError(null)}
+                />
+              )}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
                   Description
