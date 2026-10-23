@@ -65,6 +65,8 @@ import {
   Check,
   QrCode,
   Lock,
+  Download,
+  ExternalLink,
 } from 'lucide-react';
 import {
   generatePairingToken,
@@ -218,34 +220,13 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
     }
   }, [accounts, commuteAccountId]);
 
-  // 2.0 Remote Phone APK Realtime Stream Watcher
+  // 2.0 Remote Phone APK Realtime Stream Watcher & Active Poller
   useEffect(() => {
     if (trackingSource !== 'phone_apk' || !isTracking || !userId) return;
 
     setStatusMessage('Connecting to Android APK background stream...');
 
-    loadLatestDevicePing(userId).then((ping) => {
-      if (ping) {
-        setLatestPhonePing(ping);
-        const coords = { latitude: ping.latitude, longitude: ping.longitude };
-        setCurrentCoords(coords);
-        simAnchorCoords.current = coords;
-        setCurrentSpeedKmh(ping.speed_kmh);
-        if (ping.transport_mode && ping.transport_mode !== 'unknown') {
-          setClassifiedMode(ping.transport_mode as TransportMode);
-        }
-        const battText = ping.battery_level !== null && ping.battery_level !== undefined
-          ? ` • 🔋 ${Math.round(ping.battery_level)}%`
-          : '';
-        setStatusMessage(
-          `Phone APK Active: ${ping.device_name || 'Android Device'} (${ping.speed_kmh.toFixed(1)} km/h • ${ping.transport_mode || 'moving'}${battText})`
-        );
-      } else {
-        setStatusMessage('Waiting for first location ping from Android APK...');
-      }
-    });
-
-    const unsubscribe = subscribeToDevicePings(userId, (ping) => {
+    const applyPing = (ping: DeviceLocationPing) => {
       setLatestPhonePing(ping);
       const coords = { latitude: ping.latitude, longitude: ping.longitude };
       setCurrentCoords(coords);
@@ -261,12 +242,36 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
         : '';
 
       setStatusMessage(
-        `Live Phone Fix: ${ping.speed_kmh.toFixed(1)} km/h (${ping.transport_mode || 'moving'})${battLabel}`
+        `Phone APK Live: ${ping.device_name || 'Android Device'} (${ping.speed_kmh.toFixed(1)} km/h • ${ping.transport_mode || 'moving'}${battLabel})`
       );
+    };
+
+    // 1. Initial fix query
+    loadLatestDevicePing(userId).then((ping) => {
+      if (ping) {
+        applyPing(ping);
+      } else {
+        setStatusMessage('Waiting for first location ping from Android APK...');
+      }
     });
+
+    // 2. Realtime WebSocket subscription
+    const unsubscribe = subscribeToDevicePings(userId, (ping) => {
+      applyPing(ping);
+    });
+
+    // 3. Active fallback polling (every 3s) ensuring Android telemetry reaches the system even when WebSockets stall
+    const pollInterval = setInterval(() => {
+      loadLatestDevicePing(userId).then((ping) => {
+        if (ping) {
+          applyPing(ping);
+        }
+      });
+    }, 3000);
 
     return () => {
       unsubscribe();
+      clearInterval(pollInterval);
     };
   }, [trackingSource, isTracking, userId]);
 
@@ -1812,6 +1817,25 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
             </div>
 
 
+
+            {/* Download Latest Release APK */}
+            <a
+              href="https://github.com/layanmoyura/ai-finance-tracker/releases/latest"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-2.5 px-4 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 border border-purple-500/30 text-white text-xs font-bold flex items-center justify-between gap-2 shadow-sm transition group cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                  <Download className="w-4 h-4" />
+                </div>
+                <div className="text-left">
+                  <div className="text-white font-bold">Download Latest APK (v1.0.0)</div>
+                  <div className="text-[10px] text-slate-400 font-normal">Direct .apk download from GitHub Releases</div>
+                </div>
+              </div>
+              <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-white transition" />
+            </a>
 
             {/* Step-by-Step Instructions */}
             <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-2 text-xs text-slate-300">

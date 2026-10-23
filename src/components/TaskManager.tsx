@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import type { Task, Account, Category, TaskPriority, FinancialTaskType } from '../types';
+import type { Task, Account, Category } from '../types';
 import { supabase } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
-import { useAlert } from '../context/AlertContext';
 import {
   CheckCircle2,
   Circle,
@@ -21,6 +20,10 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { CurrencyLogo } from './CurrencyLogo';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
+import { taskSchema, type TaskFormData } from '../services/validationSchemas';
 
 interface TaskManagerProps {
   userId: string;
@@ -38,7 +41,6 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
   onTasksUpdated,
 }) => {
   const { preferences, formatCurrency, formatDate } = usePreferences();
-  const { showError, showWarning } = useAlert();
   const [filter, setFilter] = useState<'all' | 'financial' | 'personal' | 'completed'>('all');
   const [isAdding, setIsAdding] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -49,67 +51,73 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
   const [settleAccountId, setSettleAccountId] = useState<string>('');
   const [isSettling, setIsSettling] = useState(false);
 
-  // Form State
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [dueDate, setDueDate] = useState('');
-  const [priority, setPriority] = useState<TaskPriority>('medium');
-  const [isFinancial, setIsFinancial] = useState(false);
-  const [financialType, setFinancialType] = useState<FinancialTaskType>('payable');
-  const [amount, setAmount] = useState<number>(0);
-  const [categoryId, setCategoryId] = useState<string>('');
-  const [accountId, setAccountId] = useState<string>('');
-  const [recurrenceRule, setRecurrenceRule] = useState<string>('none');
+  const {
+    register: registerTask,
+    handleSubmit: handleTaskSubmit,
+    formState: { errors: taskErrors },
+    watch: watchTask,
+    reset: resetTaskForm,
+  } = useForm<TaskFormData>({
+    resolver: zodResolver(taskSchema),
+    defaultValues: {
+      title: '',
+      description: '',
+      due_date: '',
+      priority: 'medium',
+      is_financial: false,
+      financial_type: 'payable',
+      amount: 0,
+      category_id: '',
+      account_id: '',
+      recurrence_rule: 'none',
+    },
+    mode: 'onTouched',
+  });
 
-  const handleCreateTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) {
-      setError('Please provide a title for this task.');
-      return;
-    }
-    if (isFinancial && (!amount || amount <= 0)) {
-      setError('Please enter a valid amount greater than zero for financial tasks.');
-      return;
-    }
+  const isFinancial = watchTask('is_financial');
 
+  const onTaskInvalid = (errors: typeof taskErrors) => {
+    const errorMsg =
+      errors.title?.message ||
+      errors.amount?.message ||
+      errors.priority?.message ||
+      'Please check your task inputs.';
+    toast.error('Validation Alert', { description: errorMsg });
+  };
+
+  const onCreateTaskSubmit = async (data: TaskFormData) => {
     setLoading(true);
     setError(null);
 
     try {
       const { error: insertError } = await supabase.from('tasks').insert({
         user_id: userId,
-        title: title.trim(),
-        description: description.trim() || null,
-        due_date: dueDate ? new Date(dueDate).toISOString() : null,
-        priority,
+        title: data.title.trim(),
+        description: data.description?.trim() || null,
+        due_date: data.due_date ? new Date(data.due_date).toISOString() : null,
+        priority: data.priority,
         status: 'todo',
-        is_financial: isFinancial,
-        financial_type: isFinancial ? financialType : 'none',
-        amount: isFinancial ? Number(amount) : 0,
-        category_id: isFinancial && categoryId ? categoryId : null,
-        account_id: isFinancial && accountId ? accountId : null,
-        recurrence_rule: recurrenceRule,
+        is_financial: data.is_financial,
+        financial_type: data.is_financial ? data.financial_type : 'none',
+        amount: data.is_financial ? Number(data.amount) : 0,
+        category_id: data.is_financial && data.category_id ? data.category_id : null,
+        account_id: data.is_financial && data.account_id ? data.account_id : null,
+        recurrence_rule: data.recurrence_rule,
       });
 
       if (insertError) throw insertError;
 
-      // Reset form
-      setTitle('');
-      setDescription('');
-      setDueDate('');
-      setPriority('medium');
-      setIsFinancial(false);
-      setFinancialType('payable');
-      setAmount(0);
-      setCategoryId('');
-      setAccountId('');
-      setRecurrenceRule('none');
+      resetTaskForm();
       setIsAdding(false);
+      toast.success('Task Created', {
+        description: `Task "${data.title}" added to your planner.`,
+      });
 
       onTasksUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to create task';
       setError(msg);
+      toast.error('Creation Failed', { description: msg });
     } finally {
       setLoading(false);
     }
@@ -193,10 +201,12 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
       if (taskError) throw taskError;
 
       setSettlingTask(null);
+      toast.success('Task Settled', { description: 'Payment recorded and task marked completed.' });
       onTasksUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Settlement failed';
       setError(msg);
+      toast.error('Settlement Failed', { description: msg });
     } finally {
       setIsSettling(false);
     }
@@ -205,9 +215,10 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
   const handleDeleteTask = async (taskId: string) => {
     try {
       await supabase.from('tasks').delete().eq('id', taskId);
+      toast.success('Task Deleted', { description: 'Task removed from planner.' });
       onTasksUpdated();
     } catch (err: unknown) {
-      console.error('Error deleting task:', err);
+      toast.error('Delete Failed', { description: 'Could not remove task.' });
     }
   };
 
@@ -215,7 +226,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
 
   const handleResetTasks = async () => {
     if (tasks.length === 0) {
-      showWarning('No tasks to reset.', 'Empty Tasks');
+      toast.info('No Tasks', { description: 'No tasks to reset.' });
       return;
     }
     if (
@@ -234,7 +245,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
       localStorage.removeItem('apex_marked_today');
       onTasksUpdated();
     } catch (err: unknown) {
-      showError(err instanceof Error ? err.message : 'Failed to reset tasks', 'Task Reset Failed');
+      toast.error('Reset Failed', { description: err instanceof Error ? err.message : 'Failed to reset tasks' });
     } finally {
       setIsResetting(false);
     }
@@ -346,7 +357,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
 
         {/* Add Task Form */}
         {isAdding && (
-          <form onSubmit={handleCreateTask} className="mt-5 p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
+          <form onSubmit={handleTaskSubmit(onCreateTaskSubmit, onTaskInvalid)} className="mt-5 p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-4" noValidate>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="md:col-span-2">
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
@@ -354,12 +365,20 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
                 </label>
                 <input
                   type="text"
-                  required
+                  {...registerTask('title')}
                   placeholder={`e.g. Pay WiFi Bill (${preferences.currencySymbol}60), Review Tax Receipts, Client Landing Page Milestone`}
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className={`w-full bg-slate-900 border ${
+                    taskErrors.title
+                      ? 'border-rose-500/80 focus:ring-rose-500/50'
+                      : 'border-slate-700 focus:ring-emerald-500'
+                  } rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 transition`}
                 />
+                {taskErrors.title && (
+                  <span className="text-xs text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    {taskErrors.title.message}
+                  </span>
+                )}
               </div>
 
               <div>
@@ -368,8 +387,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
                 </label>
                 <input
                   type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
+                  {...registerTask('due_date')}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
@@ -381,8 +399,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
                   Priority
                 </label>
                 <select
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value as TaskPriority)}
+                  {...registerTask('priority')}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 >
                   <option value="low">Low</option>
@@ -397,8 +414,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
                   Recurrence
                 </label>
                 <select
-                  value={recurrenceRule}
-                  onChange={(e) => setRecurrenceRule(e.target.value)}
+                  {...registerTask('recurrence_rule')}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 >
                   <option value="none">One-time</option>
@@ -415,8 +431,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
                 <input
                   type="text"
                   placeholder="Optional context or links..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  {...registerTask('description')}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
@@ -428,8 +443,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
                 <input
                   type="checkbox"
                   id="isFinancialCheckbox"
-                  checked={isFinancial}
-                  onChange={(e) => setIsFinancial(e.target.checked)}
+                  {...registerTask('is_financial')}
                   className="w-4 h-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
                 />
                 <label htmlFor="isFinancialCheckbox" className="text-xs font-semibold text-emerald-400 cursor-pointer flex items-center gap-1.5">
@@ -445,8 +459,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
                       Type
                     </label>
                     <select
-                      value={financialType}
-                      onChange={(e) => setFinancialType(e.target.value as FinancialTaskType)}
+                      {...registerTask('financial_type')}
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"
                     >
                       <option value="payable">Bill to Pay (Expense)</option>
@@ -465,13 +478,21 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
                       <input
                         type="number"
                         step="0.01"
-                        required={isFinancial}
                         placeholder="0.00"
-                        value={amount || ''}
-                        onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-8 pr-3 py-2 text-sm text-white"
+                        {...registerTask('amount')}
+                        className={`w-full bg-slate-950 border ${
+                          taskErrors.amount
+                            ? 'border-rose-500/80 focus:ring-rose-500/50'
+                            : 'border-slate-700 focus:ring-emerald-500'
+                        } rounded-xl pl-8 pr-3 py-2 text-sm text-white transition`}
                       />
                     </div>
+                    {taskErrors.amount && (
+                      <span className="text-xs text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {taskErrors.amount.message}
+                      </span>
+                    )}
                   </div>
 
                   <div>
@@ -479,8 +500,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
                       Category
                     </label>
                     <select
-                      value={categoryId}
-                      onChange={(e) => setCategoryId(e.target.value)}
+                      {...registerTask('category_id')}
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"
                     >
                       <option value="">Select Category...</option>
@@ -497,8 +517,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
                       Primary Account
                     </label>
                     <select
-                      value={accountId}
-                      onChange={(e) => setAccountId(e.target.value)}
+                      {...registerTask('account_id')}
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"
                     >
                       <option value="">Select Account...</option>

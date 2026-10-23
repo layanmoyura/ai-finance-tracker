@@ -15,7 +15,7 @@ on:
       create_release:
         description: 'Publish APK to GitHub Releases (Direct .apk download)'
         required: false
-        default: false
+        default: true
         type: boolean
       tag_name:
         description: 'Release Tag Name (e.g. v1.0.0, if creating release)'
@@ -111,19 +111,27 @@ jobs:
           retention-days: 30
 
       - name: Publish GitHub Release with APK
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
         uses: softprops/action-gh-release@v2
         with:
           files: output-apks/*.apk
-          name: "Apex Location Tracker Companion APK ${{ github.ref_name || github.event.inputs.tag_name || 'v1.0.0' }}"
-          tag_name: ${{ github.ref_name || github.event.inputs.tag_name || 'v1.0.0' }}
+          name: "Apex Location Tracker Companion APK ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || (github.event.inputs.tag_name != '' && github.event.inputs.tag_name) || 'v1.0.0' }}"
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || (github.event.inputs.tag_name != '' && github.event.inputs.tag_name) || 'v1.0.0' }}
           draft: false
           prerelease: false
           generate_release_notes: true
           body: |
             ### 🛰️ Apex Location Tracker Companion APK
             
-            This release provides the compiled native Android companion APK for **Apex LifeOS**.
+            This release provides the compiled native Android companion APK for **Apex LifeOS** featuring the **Pure Kinetic Sensor Velocity Engine**.
+            
+            #### 🚀 Pure Kinetic Sensor Architecture:
+            - **Zero GPS Doppler Reliance**: Completely eliminated erratic satellite Doppler velocity calculations and phase-lock dropouts.
+            - **Hardware Kinetic Stationary Lock**: Clamps velocity strictly to $0.0\text{ km/h}$ when acceleration energy is $< 0.22\text{ m/s}^2$, permanently eliminating GPS multipath jitter and indoor desk wander.
+            - **Biometric Pedestrian Speed**: Computes walking velocity directly from kinetic step cadence via hardware `TYPE_STEP_DETECTOR`.
+            - **Kinetic-Gated Vehicular Transit**: Dynamic velocity calculation scaled by kinetic vibration profiles.
+            - **Instant Startup Fix**: Immediately dispatches cached fix on launch with continuous 10s telemetry heartbeat.
+            - **Zero-Exposure Pairing**: AES-256 encrypted storage via Android Keystore; pair with 1-tap token or QR code.
             
             #### 📦 Downloads:
             - **`ApexLocationTracker-debug.apk`**: Pre-signed debug APK, recommended for direct sideloading and testing.

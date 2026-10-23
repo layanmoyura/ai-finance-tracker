@@ -9,17 +9,17 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/layanpro123456/ai-finance-tracker/actions/workflows/build-tracker-apk.yml">
-    <img src="https://github.com/layanpro123456/ai-finance-tracker/actions/workflows/build-tracker-apk.yml/badge.svg" alt="Build Android APK" />
+  <a href="https://github.com/layanmoyura/ai-finance-tracker/actions/workflows/build-tracker-apk.yml">
+    <img src="https://github.com/layanmoyura/ai-finance-tracker/actions/workflows/build-tracker-apk.yml/badge.svg" alt="Build Android APK" />
   </a>
-  <a href="https://github.com/layanpro123456/ai-finance-tracker/actions/workflows/deploy.yml">
-    <img src="https://github.com/layanpro123456/ai-finance-tracker/actions/workflows/deploy.yml/badge.svg" alt="Deploy to GitHub Pages" />
+  <a href="https://github.com/layanmoyura/ai-finance-tracker/actions/workflows/deploy.yml">
+    <img src="https://github.com/layanmoyura/ai-finance-tracker/actions/workflows/deploy.yml/badge.svg" alt="Deploy to GitHub Pages" />
   </a>
 </p>
 
 <p align="center">
   <a href="docs/Apex_LifeOS_Technical_Documentation.pdf"><strong>📄 Technical Documentation (PDF)</strong></a> •
-  <a href="https://layanpro123456.github.io/ai-finance-tracker/tutorial.html"><strong>🎬 Beginner Video Tutorial</strong></a> •
+  <a href="https://layanmoyura.github.io/ai-finance-tracker/tutorial.html"><strong>🎬 Beginner Video Tutorial</strong></a> •
   <a href="docs/TUTORIAL_VIDEO_SCRIPT.md"><strong>📝 Video Production Script</strong></a>
 </p>
 
@@ -175,11 +175,27 @@ Traditional personal finance apps only track what you spent *after* you've alrea
 * **Instant Payment Links**: Generates direct deep links (UPI, Venmo, PayPal, CashApp) and Web Share API / WhatsApp formatted text.
 * **1-Click Social Ledger Sync**: Seamlessly logs individual shares into the peer-to-peer `contacts_ledger` without requiring companions to download the app.
 
-### 17. 🔔 Universal Validation Alerts & Toast UI
-* **Zero Browser Alert Dialogs**: Complete elimination of disruptive browser `alert()` pop-ups in favor of polished, dark/light mode responsive UI components.
-* **Non-Blocking Toast Stack**: Powered by `AlertContext` (`useAlert()`), rendering floating notifications with Lucide icons (`AlertCircle`, `AlertTriangle`, `CheckCircle2`, `Info`), smooth entrance/exit animations, and auto-dismiss timers.
-* **Inline Form Validation Alerts**: Form modals across budgets, transactions, assets, subscriptions, tasks, and contacts feature `<UiAlert />` banners for immediate feedback on invalid inputs.
-* **Global Interception Fallback**: Protects against unexpected or legacy `window.alert()` calls by automatically redirecting them into the UI alert system.
+### 17. 🛡️ Type-Safe Form Validation & Sonner Toast Notifications
+* **React Hook Form + Zod**: Enterprise-grade form state management and strict runtime schema validation via `react-hook-form` and `zod` with `@hookform/resolvers/zod`.
+* **Centralized Schema Architecture**: Canonical schemas in `src/services/validationSchemas.ts` enforce boundary constraints across user inputs:
+  * `authSchema`: Format-verified email and $\ge 6$ character password length.
+  * `accountSchema`: Non-empty account names and finite numerical starting balances.
+  * `budgetSchema`: Category validation and strictly positive monthly spending limits.
+  * `taskSchema`: Title length bounds, priority enums, and non-negative financial values.
+  * `transactionReviewSchema`, `cashAuditSchema`, `savedPlaceSchema`.
+* **Glassmorphic Toast Alerts**: Powered by **Sonner** and unified through `AlertContext` (`useAlert()`), replacing legacy blocking browser `alert()` dialogues with rich-colored, accessible toasts (`toast.success`, `toast.error`, `toast.warning`, `toast.info`).
+* **Inline Form Validation Alerts**: Form modals across budgets, transactions, assets, subscriptions, tasks, and contacts feature `<UiAlert />` banners and inline field error hints for immediate feedback on invalid inputs.
+* **Global Interception Fallback**: Protects against unexpected or legacy `window.alert()` calls by automatically redirecting them into the non-blocking UI toast system.
+* **Zero-Crash Backend Sentinel**: Checks `isSupabaseConfigured` on startup; if `VITE_SUPABASE_URL` is unconfigured, displays an interactive guidance banner pointing to `.env.example` instead of throwing fatal unhandled runtime exceptions.
+
+### 18. 🧪 Automated Vitest & Happy-DOM Test Suite
+* **Unit Test Engine**: Configured with **Vitest** and **Happy-DOM** for lightning-fast DOM and logic unit testing without browser overhead.
+* **100% Pass Rate Across Specifications**:
+  * `validationSchemas.test.ts`: Validates all Zod schemas, boundary conditions, and type coercions.
+  * `aiSecurityGuard.test.ts`: Tests prompt injection defenses, zero-width space stripping, secret exfiltration halts, and output schema caps.
+  * `authRedirectService.test.ts`: Tests URL token extraction, expired OTP link detection, and SPA base URL resolution.
+  * `locationMobilityService.test.ts`: Tests Haversine geodesic distance calculations and velocity-based vehicle/transit mode classification.
+  * `transactionUndoService.test.ts`: Tests expense refund and income deduction balance rollback projections.
 
 ---
 
@@ -208,6 +224,10 @@ Traditional personal finance apps only track what you spent *after* you've alrea
 | **Type Safety** | [TypeScript](https://www.typescriptlang.org/) | `^7.0.2` | Strict compile-time validation & interfaces |
 | **Build Tooling** | [Vite](https://vite.dev/) | `^8.3.4` | Ultra-fast HMR, bundling, and asset pipeline |
 | **Styling Engine** | [Tailwind CSS v4](https://tailwindcss.com/) | `^4.3.3` (`@tailwindcss/vite`) | Utility-first responsive design & dark mode |
+| **Form Management** | [React Hook Form](https://react-hook-form.com/) | `^7.90.0` | Performant, flexible forms with easy validation |
+| **Schema Validation** | [Zod](https://zod.dev/) | `^4.6.7` (`@hookform/resolvers`) | TypeScript-first schema declaration & validation |
+| **Toast Notifications**| [Sonner](https://sonner.emilkowal.ski/) | `^2.0.8` | Luxury, non-blocking glassmorphic toast notification alerts |
+| **Unit Testing** | [Vitest](https://vitest.dev/) + [Happy-DOM](https://github.com/capricorn86/happy-dom) | `^5.0.5` / `^21.0.4` | Vite-native unit test runner & lightweight DOM environment |
 | **Iconography** | [Lucide React](https://lucide.dev/) | `^1.59.0` | Accessible fintech and operational icon library |
 | **Backend & Database** | [Supabase](https://supabase.com/) | `@supabase/supabase-js: ^2.118.0` | PostgreSQL, Auth, Row-Level Security (RLS) |
 | **AI Intelligence** | [Google Gemini](https://ai.google.dev/) | 2.0 / 2.5 Flash | Natural language expense parsing & categorization |
@@ -220,7 +240,12 @@ Traditional personal finance apps only track what you spent *after* you've alrea
 
 To solve mobile browser background tab throttling and Doze mode process freezing when your phone screen locks or rests in your pocket, Apex LifeOS includes a dedicated, lightweight native Android companion application:
 
-* **High-Precision Fused Location**: Google Play Services **Fused Location Provider** with dynamic adaptive rate shifting ($8–15\text{s}$ during vehicle transit; $90\text{s}–3\text{m}$ stationary to consume $<2\%$ battery per 8 hours).
+* **High-Precision Fused Location & Instant Fix**: Google Play Services **Fused Location Provider** with immediate cached fix broadcasting upon foreground service launch.
+* **Pure Kinetic Sensor Velocity Engine (Zero GPS Doppler Reliance)**:
+  * Completely removes unreliable GNSS Doppler velocity calculations that cause zero-speed lockouts and phase dropouts.
+  * Uses hardware `TYPE_LINEAR_ACCELERATION` / `TYPE_ACCELEROMETER` (excluding gravity bias). When kinetic acceleration energy is $< 0.22\text{ m/s}^2$, velocity is strictly clamped to $0.0\text{ km/h}$, eliminating GPS drift, jitter, and desk wandering.
+  * Calculates real-time pedestrian walking speed ($3.0 - 7.5\text{ km/h}$) from biometric kinetic step cadence via hardware `TYPE_STEP_DETECTOR`.
+  * Computes motorized transit velocity via kinetic-gated displacement over monotonic elapsed time.
 * **Native Foreground Service**: Runs an ongoing status bar notification (`FOREGROUND_SERVICE_LOCATION`), preventing Android from terminating telemetry acquisition.
 * **Offline SQLite Queue**: Embedded **Room** database ensures zero lost points during cellular dead-zones or tunnels, auto-flushing to Supabase upon reconnection.
 * **Direct Supabase Sync**: Streams live telemetry directly into `device_location_pings` and broadcasts via Supabase Realtime to the web dashboard.
@@ -279,18 +304,26 @@ ai-finance-tracker/
 │   ├── services/
 │   │   ├── adminTelemetry.ts           # Privacy-first audit logging & admin email verification
 │   │   ├── aiSecurityGuard.ts          # Prompt injection scanner, adversarial pattern detector & schema validator
+│   │   ├── aiSecurityGuard.test.ts     # Unit tests for prompt injection & adversarial pattern defenses
 │   │   ├── authRedirectService.ts      # Auth redirect normalizer, URL feedback parser & parameter cleaner
+│   │   ├── authRedirectService.test.ts # Unit tests for auth redirect parameters & OTP errors
 │   │   ├── databaseAdminService.ts     # 1-Click database purge & clean 0.00 balance reset
 │   │   ├── deviceSessionService.ts     # Single-device session lock, admin lock disable override & hardware UUID
 │   │   ├── locationMobilityService.ts   # Haversine math, traffic classifier, simulator
+│   │   ├── locationMobilityService.test.ts # Unit tests for geodesic distance & speed classifier
 │   │   ├── mobilePairingService.ts     # Zero-exposure mobile pairing token, visual QR code & secret masking
-│   │   └── transactionUndoService.ts   # Transaction-wise account rollback engine & balance synchronization
+│   │   ├── transactionUndoService.ts   # Transaction-wise account rollback engine & balance synchronization
+│   │   ├── transactionUndoService.test.ts # Unit tests for transaction balance rollback math
+│   │   ├── validationSchemas.ts        # Centralized Zod validation schemas (Auth, Account, Budget, Task)
+│   │   └── validationSchemas.test.ts   # Comprehensive unit test suite for Zod validation schemas
 │   ├── types/
 │   │   └── index.ts                     # Core TypeScript schemas
 │   ├── App.tsx                          # Root coordinator & global shortcut handler (Ctrl+Shift+A)
 │   └── supabaseClient.ts               # Authenticated Supabase client instance with AI guard
 ├── public/
 │   └── 404.html                         # SPA fallback router for GitHub Pages (preserves tokens & callbacks)
+├── .env.example                         # Template environment variables for local & production deployment
+├── vitest.config.ts                     # Vitest test suite configuration with Happy-DOM
 ├── database_schema.md                   # Complete PostgreSQL DDL, RLS policies & indexes
 ├── setup_guide.md                       # Installation, environment setup & deployment guide
 ├── contributing_guidelines.md           # Development workflow, linting & security guidelines
@@ -309,7 +342,11 @@ npm install
 ```
 
 ### 2. Configure Environment Variables
-Create a `.env` file in the project root:
+Copy the template configuration and supply your credentials:
+```bash
+cp .env.example .env
+```
+Edit `.env` with your Supabase endpoint and anon public key:
 ```env
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
@@ -320,21 +357,27 @@ Execute the complete SQL definitions from [database_schema.md](database_schema.m
 
 ### 4. Configure Authentication Redirect URLs (Prevent 404s)
 In **Supabase Dashboard > Authentication > URL Configuration**:
-* **Site URL**: `https://layanpro123456.github.io/ai-finance-tracker/` (or `http://localhost:5173` locally)
+* **Site URL**: `https://layanmoyura.github.io/ai-finance-tracker/` (or `http://localhost:5173` locally)
 * **Redirect URLs** (Allow-list):
-  * `https://layanpro123456.github.io/ai-finance-tracker/**`
+  * `https://layanmoyura.github.io/ai-finance-tracker/**`
   * `http://localhost:5173/**`
   * `http://127.0.0.1:5173/**`
   * `http://localhost:3000/**`
 
-### 5. Launch Development Server
+### 5. Run Automated Test Suite
+Run the 32-test unit test suite verifying security, schemas, and math:
+```bash
+npm test
+```
+
+### 6. Launch Development Server
 ```bash
 npm run dev
 ```
 
 Visit `http://localhost:5173` in your browser.
 
-### 6. Access Administrator Portal
+### 7. Access Administrator Portal
 To access the administrative portal when logged in as `layanmoyura@proton.me`:
 * Press `Ctrl + Shift + A` (or `Cmd + Shift + A` on macOS)
 * Or append `#admin` to your browser URL

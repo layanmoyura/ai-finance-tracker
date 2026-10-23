@@ -2,6 +2,7 @@ import React, { useState, useRef, useMemo, useCallback } from 'react';
 import type { Account, Category } from '../types';
 import { parseTransaction, supabase, type ParsedTransaction } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
+import { toast } from 'sonner';
 import { CurrencyLogo } from './CurrencyLogo';
 import {
   Sparkles,
@@ -71,10 +72,15 @@ export const AiTransactionInput: React.FC<AiTransactionInputProps> = ({
   const handleParse = useCallback(
     async (inputPrompt?: string) => {
       const textToParse = inputPrompt || prompt;
-      if (!textToParse.trim()) return;
+      if (!textToParse.trim()) {
+        toast.error('Validation Alert', { description: 'Please enter or speak a transaction note (e.g. Spent $14 on lunch).' });
+        return;
+      }
 
       if (containsAdversarialPatterns(textToParse)) {
-        setError('Adversarial prompt injection pattern detected. Prompts are restricted to personal financial expense entries only.');
+        const secMsg = 'Adversarial prompt injection pattern detected. Prompts are restricted to personal financial expense entries only.';
+        setError(secMsg);
+        toast.error('Security Alert', { description: secMsg });
         return;
       }
 
@@ -84,6 +90,7 @@ export const AiTransactionInput: React.FC<AiTransactionInputProps> = ({
 
       try {
         const result = await parseTransaction(textToParse);
+        toast.success('Transaction Parsed', { description: `${result.description} (${result.amount})` });
 
         // Pre-fill review form
         setParsedItem(result);
@@ -171,7 +178,15 @@ export const AiTransactionInput: React.FC<AiTransactionInputProps> = ({
 
   const handleSaveTransaction = async () => {
     if (!selectedAccountId) {
-      setError('Please select an account for this transaction.');
+      const accMsg = 'Please select an account for this transaction.';
+      setError(accMsg);
+      toast.error('Validation Alert', { description: accMsg });
+      return;
+    }
+    if (editedAmount <= 0) {
+      const amtMsg = 'Transaction amount must be greater than zero.';
+      setError(amtMsg);
+      toast.error('Validation Alert', { description: amtMsg });
       return;
     }
 
@@ -243,6 +258,9 @@ export const AiTransactionInput: React.FC<AiTransactionInputProps> = ({
       }
 
       // Reset state and notify parent
+      toast.success('Transaction Recorded', {
+        description: `Successfully logged ${editedDescription} (${formatCurrency(editedAmount)}).`,
+      });
       setParsedItem(null);
       setPrompt('');
       setAlsoCreateAsset(false);

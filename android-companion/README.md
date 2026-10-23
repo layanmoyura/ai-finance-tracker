@@ -1,8 +1,15 @@
 # 🛰️ Apex Location Tracker (Android Companion APK)
 
-[![Build Android APK](https://github.com/layanpro123456/ai-finance-tracker/actions/workflows/build-tracker-apk.yml/badge.svg)](https://github.com/layanpro123456/ai-finance-tracker/actions/workflows/build-tracker-apk.yml)
+[![Build Android APK](https://github.com/layanmoyura/ai-finance-tracker/actions/workflows/build-tracker-apk.yml/badge.svg)](https://github.com/layanmoyura/ai-finance-tracker/actions/workflows/build-tracker-apk.yml)
 
 An ultra-lightweight, dedicated Android companion application built with **Kotlin**, **Jetpack Compose**, and **Google Play Services Fused Location Provider** for **Apex LifeOS**.
+
+---
+
+### 📥 Direct Release Download
+You can download the latest pre-compiled companion APK directly to your Android device from **GitHub Releases**:
+* **[Download Latest APK (v1.0.0)](https://github.com/layanmoyura/ai-finance-tracker/releases/latest)**
+* Direct Sideload: [`ApexLocationTracker-debug.apk`](https://github.com/layanmoyura/ai-finance-tracker/releases/download/v1.0.0/ApexLocationTracker-debug.apk)
 
 ---
 
@@ -17,13 +24,13 @@ This halts browser JavaScript execution, causing missed commute trips, broken sp
 
 ### What This APK Does:
 * **Native Foreground Service**: Runs with a low-priority ongoing notification (`FOREGROUND_SERVICE_LOCATION`), preventing Android from terminating the process.
-* **Hybrid Velocity Estimator Engine**:
-  - Direct hardware Doppler speed checks with speed accuracy validation.
-  - Kinematic fallback computation ($\Delta d / \Delta t$) using monotonic `elapsedRealtimeNanos` when Doppler speed is unavailable.
-  - GPS error ellipse filtering to eliminate stationary noise and desk jitter.
-  - Exponential Moving Average (EMA) smoothing for analog-smooth speedometer responses.
-* **Continuous Velocity Polling**: 3-second active polling interval with `0.0m` displacement threshold to guarantee immediate deceleration and red-light stop detection.
-* **Smart Telemetry Throttling & Immediate State Transitions**: Emits database pings immediately when movement starts or stops, every 3–4 seconds during active motion, and scales down to a 60-second periodic heartbeat when parked.
+* **Pure Kinetic Sensor Velocity Engine**:
+  - Zero GPS Doppler reliance: completely eliminates unreliable GNSS Doppler velocity and phase lock dropouts.
+  - Device Kinetic Stationary Lock: utilizes hardware `TYPE_LINEAR_ACCELERATION` / `TYPE_ACCELEROMETER` (excluding gravity bias). When kinetic acceleration energy is $< 0.22\text{ m/s}^2$, velocity is clamped to strictly $0.0\text{ km/h}$, eliminating GPS jitter, multipath noise, and desk drift completely.
+  - Biometric Walking Velocity via Kinetic Cadence: detects footstep impulses using hardware `TYPE_STEP_DETECTOR` to calculate real-time cadence and analog-smooth pedestrian speed ($3.0 - 7.5\text{ km/h}$).
+  - Kinetic-Gated Motorized Transit: validates active kinetic vibration ($> 0.22\text{ m/s}^2$) before integrating kinematic displacement over monotonic elapsed time ($\Delta d / \Delta t$) for vehicle and high-speed transit.
+* **Continuous Low-Latency Telemetry**: 2.5-second active location polling interval with instant cached fix dispatch upon foreground service start.
+* **Smart Telemetry Streaming & Immediate Heartbeat**: Emits database pings immediately on initial fix (first 5 pings every 2s), every 2.5–3 seconds during active motion, immediately upon transport mode transitions, and every 10 seconds during stationary lock.
 * **Comprehensive Mode Classification**: Automatic classification across `stationary`, `walking`, `cycling`, `vehicle`, and `high_speed_transit` (expressway $\ge 80\text{ km/h}$).
 * **Offline SQLite Queue**: Queues location pings in an embedded Room database when driving through tunnels or dead zones, automatically flushing to Supabase on reconnection.
 * **Direct Supabase Ingestion**: Streams real-time telemetry straight to your `device_location_pings` table, which broadcasts via Supabase Realtime to your desktop/web dashboard.
@@ -36,7 +43,7 @@ This halts browser JavaScript execution, causing missed commute trips, broken sp
 You do not need to install Android Studio or Java locally. The GitHub Actions workflow compiles the APK in the cloud:
 
 1. **Triggering the Build in GitHub**:
-   - Go to the **Actions** tab on your GitHub repository: [`ai-finance-tracker/actions`](https://github.com/layanpro123456/ai-finance-tracker/actions).
+   - Go to the **Actions** tab on your GitHub repository: [`ai-finance-tracker/actions`](https://github.com/layanmoyura/ai-finance-tracker/actions).
    - In the left sidebar, click **"Build Apex Location Tracker APK"**.
    - Click the **Run workflow** dropdown button on the right.
    - Choose:

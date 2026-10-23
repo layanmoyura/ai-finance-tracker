@@ -2,9 +2,11 @@ import React, { useState, useMemo } from 'react';
 import type { Budget, Category, Transaction } from '../types';
 import { supabase } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
-import { useAlert } from '../context/AlertContext';
-import { UiAlert } from './UiAlert';
 import { CurrencyLogo } from './CurrencyLogo';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
+import { budgetSchema, type BudgetFormData } from '../services/validationSchemas';
 import { PieChart, Plus, AlertTriangle, CheckCircle2, X, Loader2, RotateCcw } from 'lucide-react';
 
 interface BudgetManagerProps {
@@ -27,12 +29,23 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
     () => new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
     []
   );
-  const { showError, showWarning, showSuccess } = useAlert();
   const [showAddModal, setShowAddModal] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
-  const [selectedCategoryId, setSelectedCategoryId] = useState('');
-  const [monthlyLimit, setMonthlyLimit] = useState<number>(500);
   const [loading, setLoading] = useState(false);
+
+  const {
+    register: registerBudget,
+    handleSubmit: handleBudgetSubmit,
+    formState: { errors: budgetErrors },
+    setValue: setBudgetValue,
+    reset: resetBudgetForm,
+  } = useForm<BudgetFormData>({
+    resolver: zodResolver(budgetSchema),
+    defaultValues: {
+      category_id: categories.find((c) => c.type === 'expense')?.id || '',
+      monthly_limit: 500,
+    },
+    mode: 'onTouched',
+  });
 
   // Filter current month transactions
   const currentMonthExpenses = transactions.filter(
@@ -47,25 +60,22 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
     return acc;
   }, {});
 
-  const handleSaveBudget = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCategoryId) {
-      setModalError('Please select an expense category.');
-      return;
-    }
-    if (!monthlyLimit || monthlyLimit <= 0) {
-      setModalError('Please enter a monthly limit greater than zero.');
-      return;
-    }
-    setModalError(null);
+  const onBudgetInvalid = (errors: typeof budgetErrors) => {
+    const errorMsg =
+      errors.category_id?.message ||
+      errors.monthly_limit?.message ||
+      'Please check your budget input.';
+    toast.error('Validation Alert', { description: errorMsg });
+  };
 
+  const onSaveBudgetSubmit = async (data: BudgetFormData) => {
     setLoading(true);
     try {
       const { error } = await supabase.from('budgets').upsert(
         {
           user_id: userId,
-          category_id: selectedCategoryId,
-          monthly_limit: monthlyLimit,
+          category_id: data.category_id,
+          monthly_limit: Number(data.monthly_limit),
           month_year: currentMonthYear,
         },
         { onConflict: 'user_id,category_id,month_year' }
@@ -73,13 +83,15 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
 
       if (error) throw error;
 
+      resetBudgetForm();
       setShowAddModal(false);
-      showSuccess('Monthly budget limit saved successfully!');
+      toast.success('Budget Saved', {
+        description: `Budget limit set to ${formatCurrency(data.monthly_limit)}.`,
+      });
       onBudgetsUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to save budget';
-      setModalError(msg);
-      showError(msg, 'Budget Save Failed');
+      toast.error('Save Failed', { description: msg });
     } finally {
       setLoading(false);
     }
@@ -90,11 +102,11 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
     try {
       const { error } = await supabase.from('budgets').delete().eq('id', id);
       if (error) throw error;
-      showSuccess('Budget limit removed.');
+      toast.success('Budget Removed', { description: 'The budget allocation has been removed.' });
       onBudgetsUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to remove budget';
-      showError(msg, 'Budget Removal Failed');
+      toast.error('Remove Failed', { description: msg });
     }
   };
 
@@ -107,7 +119,7 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
 
   const handleResetBudgets = async () => {
     if (budgets.length === 0) {
-      showWarning('No budgets set for this month.', 'Empty Budgets');
+      toast.info('No Budgets', { description: 'No budgets are set for this month.' });
       return;
     }
     if (
@@ -122,11 +134,11 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
     try {
       const { error } = await supabase.from('budgets').delete().eq('user_id', userId);
       if (error) throw error;
-      showSuccess('All budgets reset for this month.');
+      toast.success('Budgets Reset', { description: `All budget limits for ${currentMonthTitle} have been reset.` });
       onBudgetsUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to reset budgets';
-      showError(msg, 'Budget Reset Failed');
+      toast.error('Reset Failed', { description: msg });
     } finally {
       setIsResetting(false);
     }
@@ -164,10 +176,9 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
 
           <button
             onClick={() => {
-              if (expenseCategories.length > 0 && !selectedCategoryId) {
-                setSelectedCategoryId(expenseCategories[0].id);
+              if (expenseCategories.length > 0) {
+                setBudgetValue('category_id', expenseCategories[0].id);
               }
-              setModalError(null);
               setShowAddModal(true);
             }}
             className="text-xs font-semibold px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center gap-1.5 transition shadow-lg shadow-emerald-500/10 cursor-pointer"
@@ -187,10 +198,9 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
           </p>
           <button
             onClick={() => {
-              if (expenseCategories.length > 0 && !selectedCategoryId) {
-                setSelectedCategoryId(expenseCategories[0].id);
+              if (expenseCategories.length > 0) {
+                setBudgetValue('category_id', expenseCategories[0].id);
               }
-              setModalError(null);
               setShowAddModal(true);
             }}
             className="mt-4 text-xs font-semibold px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 transition cursor-pointer"
@@ -274,23 +284,18 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveBudget} className="space-y-4">
-              {modalError && (
-                <UiAlert
-                  type="error"
-                  message={modalError}
-                  onClose={() => setModalError(null)}
-                />
-              )}
-
+            <form onSubmit={handleBudgetSubmit(onSaveBudgetSubmit, onBudgetInvalid)} className="space-y-4" noValidate>
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
                   Category
                 </label>
                 <select
-                  value={selectedCategoryId}
-                  onChange={(e) => setSelectedCategoryId(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  {...registerBudget('category_id')}
+                  className={`w-full bg-slate-800 border ${
+                    budgetErrors.category_id
+                      ? 'border-rose-500/80 focus:ring-rose-500/50'
+                      : 'border-slate-700 focus:ring-emerald-500/50'
+                  } rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 transition`}
                 >
                   {expenseCategories.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -298,6 +303,12 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
                     </option>
                   ))}
                 </select>
+                {budgetErrors.category_id && (
+                  <span className="text-xs text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    {budgetErrors.category_id.message}
+                  </span>
+                )}
               </div>
 
               <div>
@@ -310,12 +321,20 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
                   <input
                     type="number"
                     step="10"
-                    required
-                    value={monthlyLimit}
-                    onChange={(e) => setMonthlyLimit(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-8 pr-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    {...registerBudget('monthly_limit')}
+                    className={`w-full bg-slate-800 border ${
+                      budgetErrors.monthly_limit
+                        ? 'border-rose-500/80 focus:ring-rose-500/50'
+                        : 'border-slate-700 focus:ring-emerald-500/50'
+                    } rounded-xl pl-8 pr-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 transition`}
                   />
                 </div>
+                {budgetErrors.monthly_limit && (
+                  <span className="text-xs text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    {budgetErrors.monthly_limit.message}
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3">
