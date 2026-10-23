@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { Account } from '../types';
 import { supabase } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
+import { useAlert } from '../context/AlertContext';
 import {
   Users,
   Plus,
@@ -32,6 +33,7 @@ export const SplitBillModal: React.FC<SplitBillModalProps> = ({
   onSuccess,
 }) => {
   const { preferences, formatCurrency } = usePreferences();
+  const { showError } = useAlert();
   const symbol = preferences.currencySymbol || '$';
 
   // Form State
@@ -172,7 +174,7 @@ export const SplitBillModal: React.FC<SplitBillModalProps> = ({
       setCopiedBreakdown(true);
       setTimeout(() => setCopiedBreakdown(false), 2500);
     } catch {
-      alert('Failed to copy to clipboard.');
+      showError('Failed to copy to clipboard.', 'Clipboard Error');
     }
   };
 

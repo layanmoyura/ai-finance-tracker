@@ -175,6 +175,12 @@ Traditional personal finance apps only track what you spent *after* you've alrea
 * **Instant Payment Links**: Generates direct deep links (UPI, Venmo, PayPal, CashApp) and Web Share API / WhatsApp formatted text.
 * **1-Click Social Ledger Sync**: Seamlessly logs individual shares into the peer-to-peer `contacts_ledger` without requiring companions to download the app.
 
+### 17. 🔔 Universal Validation Alerts & Toast UI
+* **Zero Browser Alert Dialogs**: Complete elimination of disruptive browser `alert()` pop-ups in favor of polished, dark/light mode responsive UI components.
+* **Non-Blocking Toast Stack**: Powered by `AlertContext` (`useAlert()`), rendering floating notifications with Lucide icons (`AlertCircle`, `AlertTriangle`, `CheckCircle2`, `Info`), smooth entrance/exit animations, and auto-dismiss timers.
+* **Inline Form Validation Alerts**: Form modals across budgets, transactions, assets, subscriptions, tasks, and contacts feature `<UiAlert />` banners for immediate feedback on invalid inputs.
+* **Global Interception Fallback**: Protects against unexpected or legacy `window.alert()` calls by automatically redirecting them into the UI alert system.
+
 ---
 
 ## 🛠️ Architecture & Tech Stack
@@ -263,8 +269,10 @@ ai-finance-tracker/
 │   │   ├── SplitBillModal.tsx           # Group bill splitter with UPI/Venmo/PayPal deep links
 │   │   ├── SubscriptionManager.tsx      # Recurring billing, cancellation links & reset
 │   │   ├── TaskManager.tsx              # Operations, financial task bridge & reset
-│   │   └── TransactionList.tsx          # Filterable ledger transactions, reset & transaction-wise undo
+│   │   ├── TransactionList.tsx          # Filterable ledger transactions, reset & transaction-wise undo
+│   │   └── UiAlert.tsx                  # Accessible inline validation alert component (Lucide + Tailwind)
 │   ├── context/
+│   │   ├── AlertContext.tsx             # Universal validation alerts & toast notification provider
 │   │   └── PreferencesContext.tsx       # Dynamic currency & theme context
 │   ├── hooks/
 │   │   └── useSpeechRecognition.ts      # Web Speech API voice typing & multi-language dictation

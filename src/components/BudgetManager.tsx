@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import type { Budget, Category, Transaction } from '../types';
 import { supabase } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
+import { useAlert } from '../context/AlertContext';
+import { UiAlert } from './UiAlert';
 import { CurrencyLogo } from './CurrencyLogo';
 import { PieChart, Plus, AlertTriangle, CheckCircle2, X, Loader2, RotateCcw } from 'lucide-react';
 
@@ -25,7 +27,9 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
     () => new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
     []
   );
+  const { showError, showWarning, showSuccess } = useAlert();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [monthlyLimit, setMonthlyLimit] = useState<number>(500);
   const [loading, setLoading] = useState(false);
@@ -45,7 +49,15 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
 
   const handleSaveBudget = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCategoryId || !monthlyLimit) return;
+    if (!selectedCategoryId) {
+      setModalError('Please select an expense category.');
+      return;
+    }
+    if (!monthlyLimit || monthlyLimit <= 0) {
+      setModalError('Please enter a monthly limit greater than zero.');
+      return;
+    }
+    setModalError(null);
 
     setLoading(true);
     try {
@@ -62,10 +74,12 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
       if (error) throw error;
 
       setShowAddModal(false);
+      showSuccess('Monthly budget limit saved successfully!');
       onBudgetsUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to save budget';
-      alert(msg);
+      setModalError(msg);
+      showError(msg, 'Budget Save Failed');
     } finally {
       setLoading(false);
     }
@@ -76,10 +90,11 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
     try {
       const { error } = await supabase.from('budgets').delete().eq('id', id);
       if (error) throw error;
+      showSuccess('Budget limit removed.');
       onBudgetsUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to remove budget';
-      alert(msg);
+      showError(msg, 'Budget Removal Failed');
     }
   };
 
@@ -92,7 +107,7 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
 
   const handleResetBudgets = async () => {
     if (budgets.length === 0) {
-      alert('No budgets set for this month.');
+      showWarning('No budgets set for this month.', 'Empty Budgets');
       return;
     }
     if (
@@ -107,10 +122,11 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
     try {
       const { error } = await supabase.from('budgets').delete().eq('user_id', userId);
       if (error) throw error;
+      showSuccess('All budgets reset for this month.');
       onBudgetsUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to reset budgets';
-      alert(msg);
+      showError(msg, 'Budget Reset Failed');
     } finally {
       setIsResetting(false);
     }
@@ -151,6 +167,7 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
               if (expenseCategories.length > 0 && !selectedCategoryId) {
                 setSelectedCategoryId(expenseCategories[0].id);
               }
+              setModalError(null);
               setShowAddModal(true);
             }}
             className="text-xs font-semibold px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center gap-1.5 transition shadow-lg shadow-emerald-500/10 cursor-pointer"
@@ -173,6 +190,7 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
               if (expenseCategories.length > 0 && !selectedCategoryId) {
                 setSelectedCategoryId(expenseCategories[0].id);
               }
+              setModalError(null);
               setShowAddModal(true);
             }}
             className="mt-4 text-xs font-semibold px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 transition cursor-pointer"
@@ -257,6 +275,14 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({
             </div>
 
             <form onSubmit={handleSaveBudget} className="space-y-4">
+              {modalError && (
+                <UiAlert
+                  type="error"
+                  message={modalError}
+                  onClose={() => setModalError(null)}
+                />
+              )}
+
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
                   Category

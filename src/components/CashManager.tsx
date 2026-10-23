@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { Account, Category, Transaction } from '../types';
 import { supabase } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
+import { useAlert } from '../context/AlertContext';
 import {
   Banknote,
   ArrowDownToLine,
@@ -37,6 +38,7 @@ export const CashManager: React.FC<CashManagerProps> = ({
   onDataUpdated,
 }) => {
   const { preferences, formatCurrency } = usePreferences();
+  const { showError, showInfo } = useAlert();
   const symbol = preferences.currencySymbol || '$';
 
   // 1. Locate or define the dedicated "In-Hand Cash" account
@@ -378,7 +380,7 @@ export const CashManager: React.FC<CashManagerProps> = ({
   const handleReconcileWallet = async () => {
     if (!inHandCashAccount) return;
     if (auditVariance === 0) {
-      alert('Wallet is already 100% balanced with system recorded cash!');
+      showInfo('Wallet is already 100% balanced with system recorded cash! No adjustment required.', 'Wallet Reconciled');
       return;
     }
 
@@ -403,7 +405,7 @@ export const CashManager: React.FC<CashManagerProps> = ({
       setShowAuditModal(false);
       onDataUpdated();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Reconciliation failed');
+      showError(err instanceof Error ? err.message : 'Reconciliation failed', 'Reconciliation Error');
     } finally {
       setSubmitting(false);
     }

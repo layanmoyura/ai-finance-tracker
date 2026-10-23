@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { Account, Transaction } from '../types';
 import { supabase } from '../supabaseClient';
 import { usePreferences, CURRENCIES } from '../context/PreferencesContext';
+import { useAlert } from '../context/AlertContext';
 import {
   Wallet,
   Plus,
@@ -40,6 +41,7 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
   onTransactionsUpdated,
 }) => {
   const { preferences, formatCurrency, formatDate } = usePreferences();
+  const { showError, showSuccess } = useAlert();
   const [showAddModal, setShowAddModal] = useState(false);
   const [name, setName] = useState('');
   const [balance, setBalance] = useState<number>(0);
@@ -58,7 +60,10 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
 
   const handleAddAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setError('Please provide a name for this account.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -76,6 +81,7 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
       setName('');
       setBalance(0);
       setShowAddModal(false);
+      showSuccess('Account created successfully!');
       onAccountUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to add account';
@@ -96,10 +102,11 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
       if (selectedLedgerAccount?.id === id) {
         setSelectedLedgerAccount(null);
       }
+      showSuccess('Account deleted successfully.');
       onAccountUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete account';
-      alert(msg);
+      showError(msg, 'Account Delete Error');
     }
   };
 
@@ -129,10 +136,11 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
         });
       }
 
+      showSuccess('All accounts reset to 0.00 balance.');
       onAccountUpdated();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to reset accounts';
-      alert(msg);
+      showError(msg, 'Account Reset Error');
     } finally {
       setIsResetting(false);
     }
@@ -200,7 +208,7 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to undo transaction';
-      alert(msg);
+      showError(msg, 'Transaction Undo Error');
     } finally {
       setIsUndoing(false);
     }

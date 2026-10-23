@@ -57,6 +57,7 @@ import {
   previewTransactionUndo,
   type UndoPreview,
 } from '../services/transactionUndoService';
+import { useAlert } from '../context/AlertContext';
 
 interface AdminPortalProps {
   currentUserId?: string;
@@ -84,6 +85,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onLockSession,
   onRefreshDatabase,
 }) => {
+  const { showError, showSuccess } = useAlert();
   const [activeTab, setActiveTab] = useState<AdminViewTab>('users');
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
@@ -196,8 +198,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         currentUserEmail
       );
       setAdminUndoFeedback('Hardware device lock successfully cleared. User may authenticate from any terminal.');
+      showSuccess('Device session lock cleared successfully.');
     } catch {
-      alert('Failed to release device session');
+      showError('Failed to release device session', 'Session Release Failed');
     }
   };
 
@@ -253,7 +256,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Admin undo failed';
-      alert(msg);
+      showError(msg, 'Admin Undo Error');
     } finally {
       setIsAdminUndoing(false);
     }
@@ -295,6 +298,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [isLoadingDiagnostics, setIsLoadingDiagnostics] = useState(false);
   const [showRefreshModal, setShowRefreshModal] = useState(false);
   const [refreshConfirmInput, setRefreshConfirmInput] = useState('');
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isExecutingRefresh, setIsExecutingRefresh] = useState(false);
   const [refreshReport, setRefreshReport] = useState<DatabaseRefreshReport | null>(null);
   const [refreshProgressStep, setRefreshProgressStep] = useState<string>('');
@@ -334,8 +338,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     if (refreshConfirmInput.trim().toUpperCase() !== 'REFRESH') {
       return;
     }
+    setRefreshError(null);
     if (!currentUserId) {
-      alert('Active user credentials required to perform targeted database refresh.');
+      const msg = 'Active user credentials required to perform targeted database refresh.';
+      setRefreshError(msg);
+      showError(msg, 'Authorization Required');
       return;
     }
 
@@ -346,6 +353,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       const report = await purgeAllDatabaseData(currentUserId, currentUserEmail, 'USD', 'global');
       setRefreshProgressStep('Wiping hardware-bound local telemetry and caches...');
       setRefreshReport(report);
+      showSuccess('Database refresh executed successfully.');
 
       // Re-fetch local users & telemetry
       setUsers(getPlatformUsers(currentUserId, currentUserEmail, {
@@ -366,7 +374,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Database refresh encountered an error';
-      alert(msg);
+      setRefreshError(msg);
+      showError(msg, 'Refresh Failed');
     } finally {
       setIsExecutingRefresh(false);
       setRefreshProgressStep('');
@@ -1798,6 +1807,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     <li>Eliminate all hallucinated sample data injection from future loads</li>
                   </ul>
                 </div>
+
+                {refreshError && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+                    <span>{refreshError}</span>
+                  </div>
+                )}
 
                 {isExecutingRefresh ? (
                   <div className="p-6 rounded-2xl bg-slate-950 border border-slate-800 text-center space-y-3">

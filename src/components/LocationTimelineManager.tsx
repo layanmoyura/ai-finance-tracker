@@ -13,6 +13,7 @@ import type {
   DeviceLocationPing,
 } from '../types';
 import { usePreferences } from '../context/PreferencesContext';
+import { useAlert } from '../context/AlertContext';
 import { CurrencyLogo } from './CurrencyLogo';
 import {
   calculateDistanceMeters,
@@ -93,6 +94,7 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
   onTasksUpdated,
 }) => {
   const { preferences, formatCurrency } = usePreferences();
+  const { showError, showWarning } = useAlert();
   const symbol = preferences.currencySymbol || '$';
 
   // State: Saved Places & Events
@@ -608,7 +610,7 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
       setIsInTraffic(false);
       setStatusMessage('Timeline and daily mobility reset strictly to zero.');
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to reset timeline');
+      showError(err instanceof Error ? err.message : 'Failed to reset timeline', 'Timeline Reset Failed');
     } finally {
       setIsResetting(false);
     }
@@ -1479,7 +1481,7 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
                             setNewPlaceLng(Number(pos.coords.longitude.toFixed(6)));
                           },
                           (err) => {
-                            alert(`Could not acquire GPS: ${err.message}`);
+                            showWarning(`Could not acquire GPS: ${err.message}`, 'GPS Geolocation Notice');
                           },
                           { enableHighAccuracy: true, timeout: 8000 }
                         );

@@ -83,6 +83,12 @@ When contributing to Apex LifeOS, you must strictly follow these platform invari
 * **Foreign Key Cleanup:** Any transaction rollback must automatically nullify references in dependent subsystems (`tasks.related_transaction_id`, `personal_assets.linked_transaction_id`, and `contacts_ledger.settled_transaction_id`).
 * **Audit Trail Telemetry:** All transaction undo actions—whether initiated by users or administrators—must record a non-personal audit event in the platform telemetry stream.
 
+### 9. Validation Alerts & UI Library Invariants
+* **Zero Native Alerts:** Native browser `alert(...)` or `window.alert(...)` is strictly forbidden across user-facing code.
+* **Unified UI Libraries:** All validations, user notifications, error states, and operation confirmations must use existing UI libraries (Tailwind CSS and Lucide React) through `AlertContext` (`useAlert()`) and `<UiAlert />`.
+* **Global Interceptor Fallback:** `AlertProvider` intercepts any legacy `window.alert` calls and routes them safely into the non-blocking UI alert stack.
+* **Inline Modal Validation:** Form modals (budgets, transactions, assets, subscriptions, tasks, contacts) must render field validation errors inline with clear icons (`AlertCircle`, `AlertTriangle`) and descriptive guidance before submission.
+
 ---
 
 ## 📋 Pre-Pull Request Checklist
@@ -92,6 +98,7 @@ When contributing to Apex LifeOS, you must strictly follow these platform invari
 - [ ] Responsive UI verified on mobile (360px - 414px), tablet (768px), and desktop (1280px+).
 - [ ] No regression in single-device session lock (including admin disable toggle) or geofence proximity alerts.
 - [ ] Atomic balance rollback and foreign key cleanup verified across transaction undo flows.
+- [ ] Zero native `alert()` calls: all notifications and form validations use `AlertContext` and `UiAlert`.
 - [ ] All new database operations adhere to Row-Level Security (RLS).
 - [ ] Markdown documentation (`README.md`, `project_readme.md`, `contributing_guidelines.md`, `database_schema.md`, `setup_guide.md`) updated to reflect all code and architectural changes.
 - [ ] Directory tree and module lists in `README.md` and `project_readme.md` reflect all newly created or updated files.

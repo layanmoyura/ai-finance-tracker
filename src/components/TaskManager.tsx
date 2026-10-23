@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Task, Account, Category, TaskPriority, FinancialTaskType } from '../types';
 import { supabase } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
+import { useAlert } from '../context/AlertContext';
 import {
   CheckCircle2,
   Circle,
@@ -37,6 +38,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
   onTasksUpdated,
 }) => {
   const { preferences, formatCurrency, formatDate } = usePreferences();
+  const { showError, showWarning } = useAlert();
   const [filter, setFilter] = useState<'all' | 'financial' | 'personal' | 'completed'>('all');
   const [isAdding, setIsAdding] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -61,7 +63,14 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim()) {
+      setError('Please provide a title for this task.');
+      return;
+    }
+    if (isFinancial && (!amount || amount <= 0)) {
+      setError('Please enter a valid amount greater than zero for financial tasks.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -206,7 +215,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
 
   const handleResetTasks = async () => {
     if (tasks.length === 0) {
-      alert('No tasks to reset.');
+      showWarning('No tasks to reset.', 'Empty Tasks');
       return;
     }
     if (
@@ -225,7 +234,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({
       localStorage.removeItem('apex_marked_today');
       onTasksUpdated();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to reset tasks');
+      showError(err instanceof Error ? err.message : 'Failed to reset tasks', 'Task Reset Failed');
     } finally {
       setIsResetting(false);
     }

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Subscription, Account, Category, BillingCycle } from '../types';
 import { supabase } from '../supabaseClient';
 import { usePreferences } from '../context/PreferencesContext';
+import { useAlert } from '../context/AlertContext';
 import {
   CreditCard,
   Plus,
@@ -33,6 +34,7 @@ export const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({
   onSubscriptionsUpdated,
 }) => {
   const { formatCurrency, formatDate } = usePreferences();
+  const { showError, showWarning } = useAlert();
   const [isAdding, setIsAdding] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +54,14 @@ export const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({
 
   const handleCreateSubscription = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !nextBillingDate) return;
+    if (!name.trim()) {
+      setError('Please provide a subscription name.');
+      return;
+    }
+    if (!nextBillingDate) {
+      setError('Please specify the next billing date.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -164,7 +173,7 @@ export const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({
 
   const handleResetSubscriptions = async () => {
     if (subscriptions.length === 0) {
-      alert('No subscriptions to reset.');
+      showWarning('No subscriptions to reset.', 'Empty Subscriptions');
       return;
     }
     if (
@@ -181,7 +190,7 @@ export const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({
       if (error) throw error;
       onSubscriptionsUpdated();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to reset subscriptions');
+      showError(err instanceof Error ? err.message : 'Failed to reset subscriptions', 'Subscription Reset Failed');
     } finally {
       setIsResetting(false);
     }
