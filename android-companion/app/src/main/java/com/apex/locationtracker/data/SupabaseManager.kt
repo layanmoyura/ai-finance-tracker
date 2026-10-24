@@ -9,6 +9,8 @@ import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -59,6 +61,9 @@ class SupabaseManager private constructor(context: Context) {
     @Volatile private var cachedUserId: String = ""
     @Volatile private var cachedDeviceId: String = ""
     @Volatile private var cachedDeviceName: String = ""
+
+    // Dynamic schema compatibility sentinel: falls back to omitting transport_mode if remote database lacks column
+    @Volatile private var remoteSupportsTransportMode: Boolean = true
 
     init {
         loadCredentials()
@@ -213,6 +218,7 @@ class SupabaseManager private constructor(context: Context) {
                 supabaseUrl = url
                 anonKey = key
                 userId = trimmedUid
+                remoteSupportsTransportMode = true
                 Log.i(TAG, "Pairing token imported successfully. Configured user: ${getMaskedUserId()}")
                 return true
             }
@@ -287,6 +293,7 @@ class SupabaseManager private constructor(context: Context) {
      */
     suspend fun testConnection(): Result<Boolean> = withContext(Dispatchers.IO) {
         if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase not configured"))
+        remoteSupportsTransportMode = true
         val endpoint = "$supabaseUrl/rest/v1/device_location_pings?select=id&limit=1"
         val request = Request.Builder()
             .url(endpoint)
@@ -311,9 +318,34 @@ class SupabaseManager private constructor(context: Context) {
         }
     }
 
+    private fun serializePing(ping: LocationPingEntity, includeTransportMode: Boolean): String {
+        val tree = gson.toJsonTree(ping).asJsonObject
+        if (!includeTransportMode) {
+            tree.remove("transport_mode")
+        }
+        return tree.toString()
+    }
+
+    private fun serializePings(pings: List<LocationPingEntity>, includeTransportMode: Boolean): String {
+        val array = gson.toJsonTree(pings).asJsonArray
+        if (!includeTransportMode) {
+            for (elem in array) {
+                if (elem.isJsonObject) {
+                    elem.asJsonObject.remove("transport_mode")
+                }
+            }
+        }
+        return array.toString()
+    }
+
+    private fun isTransportModeMissingError(rawBody: String): Boolean {
+        return rawBody.contains("transport_mode", ignoreCase = true)
+    }
+
     /**
      * Sends a single ping to Supabase.
      * Uses standard PostgREST insert ('Prefer: return=minimal') without upsert conflict requirements.
+     * Automatically adapts payload and omits 'transport_mode' if remote schema lacks the column.
      * If network fails or server is temporarily unavailable (5xx/429), queues into Room database.
      * Permanent client format/auth errors (4xx) are NOT cached as poison pills.
      */
@@ -330,13 +362,14 @@ class SupabaseManager private constructor(context: Context) {
             ping
         }
 
-        val jsonPayload = gson.toJson(effectivePing)
         val endpoint = "$supabaseUrl/rest/v1/device_location_pings"
         val mediaType = "application/json; charset=utf-8".toMediaType()
-        val body = jsonPayload.toRequestBody(mediaType)
 
-        // Standard PostgREST insert: clean 'Prefer: return=minimal' without upsert clauses
-        val request = Request.Builder()
+        var currentIncludeMode = remoteSupportsTransportMode
+        var jsonPayload = serializePing(effectivePing, includeTransportMode = currentIncludeMode)
+        var body = jsonPayload.toRequestBody(mediaType)
+
+        var request = Request.Builder()
             .url(endpoint)
             .addHeader("apikey", anonKey)
             .addHeader("Authorization", "Bearer $anonKey")
@@ -346,15 +379,45 @@ class SupabaseManager private constructor(context: Context) {
             .build()
 
         try {
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    Log.d(TAG, "Ping transmitted successfully. HTTP ${response.code}")
+            var response = client.newCall(request).execute()
+
+            // Dynamic graceful degradation: If PostgREST schema cache lacks 'transport_mode' (HTTP 400),
+            // adapt payload by omitting transport_mode and retry immediately in the same dispatch cycle.
+            if (response.code == 400 && currentIncludeMode) {
+                val rawBody = response.body?.string() ?: ""
+                if (isTransportModeMissingError(rawBody)) {
+                    response.close()
+                    Log.w(TAG, "Remote Supabase schema lacks 'transport_mode'. Degrading payload and retrying...")
+                    remoteSupportsTransportMode = false
+                    currentIncludeMode = false
+                    jsonPayload = serializePing(effectivePing, includeTransportMode = false)
+                    body = jsonPayload.toRequestBody(mediaType)
+                    request = Request.Builder()
+                        .url(endpoint)
+                        .addHeader("apikey", anonKey)
+                        .addHeader("Authorization", "Bearer $anonKey")
+                        .addHeader("Content-Type", "application/json")
+                        .addHeader("Prefer", "return=minimal")
+                        .post(body)
+                        .build()
+                    response = client.newCall(request).execute()
+                } else {
+                    val errDetail = parseSupabaseError(rawBody)
+                    Log.w(TAG, "Supabase rejected ping: HTTP 400 - $rawBody")
+                    response.close()
+                    return@withContext Result.failure(IOException("HTTP 400: $errDetail"))
+                }
+            }
+
+            response.use { resp ->
+                if (resp.isSuccessful) {
+                    Log.d(TAG, "Ping transmitted successfully. HTTP ${resp.code}")
                     // Drain any pending offline pings on successful connection
                     flushOfflineQueue()
-                    return@withContext Result.success(response.code)
+                    return@withContext Result.success(resp.code)
                 } else {
-                    val code = response.code
-                    val rawBody = response.body?.string() ?: ""
+                    val code = resp.code
+                    val rawBody = resp.body?.string() ?: ""
                     val errDetail = parseSupabaseError(rawBody)
                     Log.w(TAG, "Supabase rejected ping: HTTP $code - $rawBody")
 
@@ -379,6 +442,7 @@ class SupabaseManager private constructor(context: Context) {
     /**
      * Flushes offline cached pings in batches of up to 50.
      * Uses target on_conflict=id for upsert idempotency with automatic fallback to standard batch insert.
+     * Automatically adapts payload and omits 'transport_mode' if remote schema lacks the column.
      */
     suspend fun flushOfflineQueue(): Result<Int> = withContext(Dispatchers.IO) {
         if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase not configured"))
@@ -398,13 +462,15 @@ class SupabaseManager private constructor(context: Context) {
         }
 
         Log.i(TAG, "Attempting to flush ${validPings.size} cached pings to Supabase...")
-        val jsonPayload = gson.toJson(validPings)
         val mediaType = "application/json; charset=utf-8".toMediaType()
-        val body = jsonPayload.toRequestBody(mediaType)
+
+        var currentIncludeMode = remoteSupportsTransportMode
+        var jsonPayload = serializePings(validPings, includeTransportMode = currentIncludeMode)
+        var body = jsonPayload.toRequestBody(mediaType)
 
         // 1. Try upsert with on_conflict=id
         val upsertEndpoint = "$supabaseUrl/rest/v1/device_location_pings?on_conflict=id"
-        val upsertRequest = Request.Builder()
+        var upsertRequest = Request.Builder()
             .url(upsertEndpoint)
             .addHeader("apikey", anonKey)
             .addHeader("Authorization", "Bearer $anonKey")
@@ -416,8 +482,41 @@ class SupabaseManager private constructor(context: Context) {
         try {
             var response = client.newCall(upsertRequest).execute()
 
-            // If PostgREST rejects the on_conflict preference with HTTP 400, fallback to standard batch insert
-            if (response.code == 400) {
+            // Handle schema lack of transport_mode or lack of on_conflict support
+            if (response.code == 400 && currentIncludeMode) {
+                val rawBody = response.body?.string() ?: ""
+                if (isTransportModeMissingError(rawBody)) {
+                    response.close()
+                    Log.w(TAG, "Offline flush: Supabase schema lacks 'transport_mode'. Adapting batch payload...")
+                    remoteSupportsTransportMode = false
+                    currentIncludeMode = false
+                    jsonPayload = serializePings(validPings, includeTransportMode = false)
+                    body = jsonPayload.toRequestBody(mediaType)
+                    upsertRequest = Request.Builder()
+                        .url(upsertEndpoint)
+                        .addHeader("apikey", anonKey)
+                        .addHeader("Authorization", "Bearer $anonKey")
+                        .addHeader("Content-Type", "application/json")
+                        .addHeader("Prefer", "return=minimal, resolution=ignore-duplicates")
+                        .post(body)
+                        .build()
+                    response = client.newCall(upsertRequest).execute()
+                } else {
+                    response.close()
+                    Log.w(TAG, "Upsert on_conflict rejected by PostgREST with HTTP 400, falling back to standard batch insert...")
+                    val fallbackEndpoint = "$supabaseUrl/rest/v1/device_location_pings"
+                    val fallbackRequest = Request.Builder()
+                        .url(fallbackEndpoint)
+                        .addHeader("apikey", anonKey)
+                        .addHeader("Authorization", "Bearer $anonKey")
+                        .addHeader("Content-Type", "application/json")
+                        .addHeader("Prefer", "return=minimal")
+                        .post(body)
+                        .build()
+                    response = client.newCall(fallbackRequest).execute()
+                }
+            } else if (response.code == 400) {
+                // If on_conflict is rejected by PostgREST with HTTP 400, fallback to standard batch insert
                 response.close()
                 Log.w(TAG, "Upsert on_conflict rejected by PostgREST with HTTP 400, falling back to standard batch insert...")
                 val fallbackEndpoint = "$supabaseUrl/rest/v1/device_location_pings"
@@ -430,6 +529,29 @@ class SupabaseManager private constructor(context: Context) {
                     .post(body)
                     .build()
                 response = client.newCall(fallbackRequest).execute()
+            }
+
+            // In case standard batch insert also fails on transport_mode
+            if (response.code == 400 && currentIncludeMode) {
+                val rawBody = response.body?.string() ?: ""
+                if (isTransportModeMissingError(rawBody)) {
+                    response.close()
+                    Log.w(TAG, "Batch insert: Supabase schema lacks 'transport_mode'. Adapting fallback batch payload...")
+                    remoteSupportsTransportMode = false
+                    currentIncludeMode = false
+                    jsonPayload = serializePings(validPings, includeTransportMode = false)
+                    body = jsonPayload.toRequestBody(mediaType)
+                    val fallbackEndpoint = "$supabaseUrl/rest/v1/device_location_pings"
+                    val fallbackRequest = Request.Builder()
+                        .url(fallbackEndpoint)
+                        .addHeader("apikey", anonKey)
+                        .addHeader("Authorization", "Bearer $anonKey")
+                        .addHeader("Content-Type", "application/json")
+                        .addHeader("Prefer", "return=minimal")
+                        .post(body)
+                        .build()
+                    response = client.newCall(fallbackRequest).execute()
+                }
             }
 
             response.use { resp ->

@@ -308,6 +308,12 @@ CREATE INDEX IF NOT EXISTS idx_daily_mobility_stats_device ON public.daily_mobil
 CREATE INDEX IF NOT EXISTS idx_device_pings_user_time ON public.device_location_pings(user_id, recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_device_pings_device_time ON public.device_location_pings(device_id, recorded_at DESC);
 
+-- Upgrading Existing Deployments for Companion APK Support:
+-- Run this if device_location_pings was created before transport_mode was introduced:
+-- ALTER TABLE public.device_location_pings ADD COLUMN IF NOT EXISTS transport_mode TEXT DEFAULT 'unknown';
+-- UPDATE public.device_location_pings SET transport_mode = 'unknown' WHERE transport_mode IS NULL;
+-- NOTIFY pgrst, 'reload schema';
+
 -- ================================================================
 -- 12. Single-Device Session Enforcement
 -- ================================================================
