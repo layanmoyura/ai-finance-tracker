@@ -98,6 +98,26 @@ Open `http://localhost:5173` in your browser. Register a new account or log in.
 
 ---
 
+### 🔧 Troubleshooting: "Could not find the 'transport_mode' column" (HTTP 400)
+If your Android Companion app reports `Transmitted Pings: 0 (HTTP 400 (Could not find the 'transport_mode'))`, your remote Supabase database was created before `transport_mode` was added to the schema.
+
+To resolve this instantly:
+1. Open the **SQL Editor** in your Supabase dashboard.
+2. Execute the migration from [`supabase/migrations/20261024_add_transport_mode_to_pings.sql`](supabase/migrations/20261024_add_transport_mode_to_pings.sql):
+```sql
+ALTER TABLE public.device_location_pings 
+ADD COLUMN IF NOT EXISTS transport_mode TEXT DEFAULT 'unknown';
+
+UPDATE public.device_location_pings 
+SET transport_mode = 'unknown' 
+WHERE transport_mode IS NULL;
+
+NOTIFY pgrst, 'reload schema';
+```
+3. In the Android app, tap **⚙️ Settings > Test Connection**. Pings will resume transmitting immediately.
+
+---
+
 ## Step 5: Administrator Setup & Discrete Access
 
 Apex LifeOS enforces strict role-based access control (RBAC):

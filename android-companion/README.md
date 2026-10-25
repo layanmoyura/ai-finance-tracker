@@ -33,7 +33,7 @@ This halts browser JavaScript execution, causing missed commute trips, broken sp
 * **Smart Telemetry Streaming & Immediate Heartbeat**: Emits database pings immediately on initial fix (first 5 pings every 2s), every 2.5–3 seconds during active motion, immediately upon transport mode transitions, and every 10 seconds during stationary lock.
 * **Comprehensive Mode Classification**: Automatic classification across `stationary`, `walking`, `cycling`, `vehicle`, and `high_speed_transit` (expressway $\ge 80\text{ km/h}$).
 * **Offline SQLite Queue**: Queues location pings in an embedded Room database when driving through tunnels or dead zones, automatically flushing to Supabase on reconnection.
-* **Direct Supabase Ingestion**: Streams real-time telemetry straight to your `device_location_pings` table, which broadcasts via Supabase Realtime to your desktop/web dashboard.
+* **Direct Supabase Ingestion & Dynamic Graceful Degradation**: Streams real-time telemetry straight to your `device_location_pings` table, which broadcasts via Supabase Realtime to your desktop/web dashboard. If a remote Supabase deployment lacks the `transport_mode` column, the APK automatically adapts payloads and degrades gracefully without stalling transmission.
 
 ---
 
