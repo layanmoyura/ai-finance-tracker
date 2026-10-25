@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import type { DeviceLocationPing } from '../types';
 import {
   Play,
@@ -16,6 +16,8 @@ import {
   Maximize2,
   Layers,
 } from 'lucide-react';
+
+export type BasemapTheme = 'dark' | 'esri' | 'osm' | 'vector';
 
 interface SriLankaMobilityMapProps {
   pings: DeviceLocationPing[];
@@ -54,12 +56,13 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const activeTileLayersRef = useRef<any[]>([]);
   const routeLayerGroupRef = useRef<any>(null);
   const scrubberMarkerRef = useRef<any>(null);
 
-  // Fallback & view modes
+  // Basemap & view modes
   const [leafletLoaded, setLeafletLoaded] = useState<boolean>(() => typeof (window as any).L !== 'undefined');
-  const [mapMode, setMapMode] = useState<'leaflet' | 'vector'>('leaflet');
+  const [basemapTheme, setBasemapTheme] = useState<BasemapTheme>('dark');
 
   // Scrubber & playback states
   const [scrubIndex, setScrubIndex] = useState<number>(0);
@@ -117,7 +120,7 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
       script.onerror = () => {
         if (isMounted) {
           console.warn('Leaflet CDN load failed; switching to SVG Vector fallback mode.');
-          setMapMode('vector');
+          setBasemapTheme('vector');
         }
       };
       document.body.appendChild(script);
@@ -136,9 +139,69 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
     };
   }, []);
 
+  // Update Tile Layers without destroying map
+  const updateTileLayers = useCallback((map: any, theme: BasemapTheme) => {
+    const L = (window as any).L;
+    if (!L || !map || theme === 'vector') return;
+
+    // Remove previous tile layers
+    activeTileLayersRef.current.forEach((layer) => {
+      try {
+        map.removeLayer(layer);
+      } catch {
+        // ignore
+      }
+    });
+    activeTileLayersRef.current = [];
+
+    const layersToAdd: any[] = [];
+
+    if (theme === 'dark') {
+      // Zero-key OpenStreetMap with targeted dark-mode CSS filter (permanent, free, street-level detail up to zoom 19)
+      const osmDark = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+        className: 'dark-map-tiles',
+      });
+      layersToAdd.push(osmDark);
+    } else if (theme === 'esri') {
+      // Esri World Dark Gray Canvas (Base + Labels overlay) - Free public endpoint
+      const esriBase = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+        {
+          attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+          maxZoom: 16,
+        }
+      );
+      const esriLabels = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+        {
+          maxZoom: 16,
+        }
+      );
+      layersToAdd.push(esriBase, esriLabels);
+    } else if (theme === 'osm') {
+      // Standard daylight OpenStreetMap
+      const osmStandard = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+      });
+      layersToAdd.push(osmStandard);
+    }
+
+    layersToAdd.forEach((layer) => {
+      layer.addTo(map);
+      if (layer.bringToBack) {
+        layer.bringToBack();
+      }
+    });
+
+    activeTileLayersRef.current = layersToAdd;
+  }, []);
+
   // 2. Initialize Leaflet Map Instance
   useEffect(() => {
-    if (!leafletLoaded || mapMode !== 'leaflet' || !mapContainerRef.current) return;
+    if (!leafletLoaded || basemapTheme === 'vector' || !mapContainerRef.current) return;
 
     const L = (window as any).L;
     if (!L) return;
@@ -149,16 +212,11 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
           center: [SRI_LANKA_CENTER.lat, SRI_LANKA_CENTER.lng],
           zoom: 8,
           minZoom: 6,
-          maxZoom: 18,
+          maxZoom: 19,
           zoomControl: false,
         });
 
-        // Add subtle dark tile layer (CartoDB Dark Matter)
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-          attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap',
-          subdomains: 'abcd',
-          maxZoom: 19,
-        }).addTo(map);
+        updateTileLayers(map, basemapTheme);
 
         L.control.zoom({ position: 'bottomright' }).addTo(map);
 
@@ -167,18 +225,21 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
         mapInstanceRef.current = map;
       } catch (err) {
         console.warn('Leaflet init error:', err);
-        setMapMode('vector');
+        setBasemapTheme('vector');
       }
     }
+  }, [leafletLoaded, basemapTheme, updateTileLayers]);
 
-    return () => {
-      // Keep map instance mounted across re-renders to prevent container destruction
-    };
-  }, [leafletLoaded, mapMode]);
+  // Handle Basemap Theme Swapping on existing map
+  useEffect(() => {
+    if (mapInstanceRef.current && basemapTheme !== 'vector') {
+      updateTileLayers(mapInstanceRef.current, basemapTheme);
+    }
+  }, [basemapTheme, updateTileLayers]);
 
   // 3. Update Polylines, Markers, and Bounds on Map
   useEffect(() => {
-    if (mapMode !== 'leaflet' || !mapInstanceRef.current || !routeLayerGroupRef.current) return;
+    if (basemapTheme === 'vector' || !mapInstanceRef.current || !routeLayerGroupRef.current) return;
     const L = (window as any).L;
     if (!L) return;
 
@@ -187,7 +248,6 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
     scrubberMarkerRef.current = null;
 
     if (sortedPings.length === 0) {
-      // Reset view to Sri Lanka default
       mapInstanceRef.current.setView([SRI_LANKA_CENTER.lat, SRI_LANKA_CENTER.lng], 8);
       return;
     }
@@ -273,10 +333,9 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
       const dist = Math.hypot(p.latitude - dwellCandidate.latitude, p.longitude - dwellCandidate.longitude);
 
       if (dist < 0.0008 && deltaMs >= 5 * 60 * 1000) {
-        // Dwell > 5 mins
         const dwellIcon = L.divIcon({
           className: 'dwell-stop-icon',
-          html: `<div class="h-3 w-3 rounded-full bg-amber-400 border border-slate-900 shadow ring-2 ring-amber-500/50"></div>`,
+          html: '<div class="h-3 w-3 rounded-full bg-amber-400 border border-slate-900 shadow ring-2 ring-amber-500/50"></div>',
           iconSize: [12, 12],
           iconAnchor: [6, 6],
         });
@@ -323,13 +382,13 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
     } catch (e) {
       console.warn('Error fitting bounds:', e);
     }
-  }, [sortedPings, leafletLoaded, mapMode]);
+  }, [sortedPings, leafletLoaded, basemapTheme]);
 
   // 4. Update Scrubber Marker position when scrubIndex changes
   useEffect(() => {
-    if (mapMode !== 'leaflet' || !scrubberMarkerRef.current || !activePing) return;
+    if (basemapTheme === 'vector' || !scrubberMarkerRef.current || !activePing) return;
     scrubberMarkerRef.current.setLatLng([activePing.latitude, activePing.longitude]);
-  }, [scrubIndex, activePing, mapMode]);
+  }, [scrubIndex, activePing, basemapTheme]);
 
   // 5. Playback Animation Timer
   useEffect(() => {
@@ -351,7 +410,7 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
 
   // Helper action: Fit route bounds
   const handleFitRoute = () => {
-    if (mapMode === 'leaflet' && mapInstanceRef.current && sortedPings.length > 0) {
+    if (basemapTheme !== 'vector' && mapInstanceRef.current && sortedPings.length > 0) {
       const L = (window as any).L;
       if (!L) return;
       const latLngs = sortedPings.map((p) => [p.latitude, p.longitude] as [number, number]);
@@ -361,7 +420,7 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
 
   // Helper action: View whole Sri Lanka island
   const handleWholeIslandView = () => {
-    if (mapMode === 'leaflet' && mapInstanceRef.current) {
+    if (basemapTheme !== 'vector' && mapInstanceRef.current) {
       mapInstanceRef.current.setView([SRI_LANKA_CENTER.lat, SRI_LANKA_CENTER.lng], 8);
     }
   };
@@ -449,13 +508,14 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
           </div>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-2">
+        {/* Action Controls & Basemap Switcher */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Quick Fit & Island Zoom Buttons */}
           <button
             onClick={handleFitRoute}
             disabled={sortedPings.length === 0}
             title="Fit zoom to recorded journey"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 disabled:opacity-40 transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 disabled:opacity-40 transition-colors cursor-pointer"
           >
             <Maximize2 className="w-3.5 h-3.5" />
             <span>Fit Route</span>
@@ -464,19 +524,62 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
           <button
             onClick={handleWholeIslandView}
             title="Reset map view to whole Sri Lanka"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
           >
             <span>🇱🇰 Sri Lanka</span>
           </button>
 
-          <button
-            onClick={() => setMapMode((prev) => (prev === 'leaflet' ? 'vector' : 'leaflet'))}
-            title="Switch between Leaflet Tile Map and SVG Vector Map"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span className="capitalize">{mapMode === 'leaflet' ? 'Vector' : 'Tiles'}</span>
-          </button>
+          {/* Zero-Key Basemap Selector */}
+          <div className="flex items-center rounded-lg bg-slate-950 p-0.5 border border-slate-800 text-xs">
+            <button
+              onClick={() => setBasemapTheme('dark')}
+              className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                basemapTheme === 'dark'
+                  ? 'bg-indigo-600 text-white shadow-sm font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Dark Mode OpenStreetMap (Zero API Key)"
+            >
+              🌙 Dark
+            </button>
+
+            <button
+              onClick={() => setBasemapTheme('esri')}
+              className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                basemapTheme === 'esri'
+                  ? 'bg-indigo-600 text-white shadow-sm font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Esri World Dark Gray Canvas (Zero API Key)"
+            >
+              🗺️ Esri
+            </button>
+
+            <button
+              onClick={() => setBasemapTheme('osm')}
+              className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                basemapTheme === 'osm'
+                  ? 'bg-indigo-600 text-white shadow-sm font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Standard Full-Color OpenStreetMap"
+            >
+              ☀️ Street
+            </button>
+
+            <button
+              onClick={() => setBasemapTheme('vector')}
+              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                basemapTheme === 'vector'
+                  ? 'bg-indigo-600 text-white shadow-sm font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Standalone SVG Vector Fallback Map"
+            >
+              <Layers className="w-3 h-3" />
+              <span>Vector</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -486,12 +589,12 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
         <div
           ref={mapContainerRef}
           className={`w-full h-full z-0 transition-opacity duration-300 ${
-            mapMode === 'leaflet' ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'
+            basemapTheme !== 'vector' ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'
           }`}
         />
 
         {/* Mode B: High-Precision Standalone SVG Vector Map of Sri Lanka */}
-        {mapMode === 'vector' && (
+        {basemapTheme === 'vector' && (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4">
             <svg
               viewBox="0 0 420 650"
@@ -683,7 +786,7 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
                 }
                 setIsPlaying(!isPlaying);
               }}
-              className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition-colors"
+              className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition-colors cursor-pointer"
               title={isPlaying ? 'Pause Playback' : 'Play Journey'}
             >
               {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
@@ -695,7 +798,7 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
                 setIsPlaying(false);
                 setScrubIndex(0);
               }}
-              className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+              className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors cursor-pointer"
               title="Rewind to start"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -728,7 +831,7 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
                 <button
                   key={speed}
                   onClick={() => setPlaybackSpeed(speed)}
-                  className={`px-2 py-0.5 rounded-md font-semibold text-[10px] transition-colors ${
+                  className={`px-2 py-0.5 rounded-md font-semibold text-[10px] transition-colors cursor-pointer ${
                     playbackSpeed === speed
                       ? 'bg-indigo-600 text-white shadow'
                       : 'text-slate-400 hover:text-slate-200'
