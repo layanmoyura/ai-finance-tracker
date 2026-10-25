@@ -15,6 +15,7 @@ import type {
 import { usePreferences } from '../context/PreferencesContext';
 import { useAlert } from '../context/AlertContext';
 import { CurrencyLogo } from './CurrencyLogo';
+import { SriLankaMobilityMap } from './SriLankaMobilityMap';
 import {
   calculateDistanceMeters,
   MobilityClassifier,
@@ -24,6 +25,9 @@ import {
   loadTimelineEvents,
   persistTimelineEvent,
   loadDailyMobilityStats,
+  loadDevicePingsForDate,
+  loadAvailablePingDates,
+  computeDailyStatsFromPings,
   updateDailyMobilityStats,
   loadLatestDevicePing,
   subscribeToDevicePings,
@@ -55,6 +59,8 @@ import {
   Radio,
   Sliders,
   ChevronRight,
+  ChevronLeft,
+  Calendar,
   X,
   Loader2,
   Smartphone,
@@ -102,8 +108,51 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
   // State: Saved Places & Events
   const [places, setPlaces] = useState<SavedPlace[]>([]);
   const [events, setEvents] = useState<MobilityTimelineEvent[]>([]);
+  // Hardware Device Info (for Unique Partitioning)
+  const deviceInfo = useMemo(() => getCurrentDeviceInfo(), []);
+
   const [dailyStats, setDailyStats] = useState<DailyMobilityStats | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Historical Travel Data & Sri Lanka Map State
+  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [, setAvailableDates] = useState<string[]>([]);
+  const [dailyPings, setDailyPings] = useState<DeviceLocationPing[]>([]);
+  const [isLoadingPings, setIsLoadingPings] = useState<boolean>(false);
+
+  const loadDateData = useCallback(async (dateStr: string) => {
+    setIsLoadingPings(true);
+    try {
+      const [pings, stats] = await Promise.all([
+        loadDevicePingsForDate(userId, dateStr),
+        loadDailyMobilityStats(userId, dateStr, deviceInfo.deviceId),
+      ]);
+      setDailyPings(pings);
+
+      if (!stats || stats.total_distance_km === 0) {
+        if (pings.length > 0) {
+          const synthesized = computeDailyStatsFromPings(pings, dateStr, userId, deviceInfo.deviceId);
+          setDailyStats(synthesized);
+        } else {
+          setDailyStats(stats);
+        }
+      } else {
+        setDailyStats(stats);
+      }
+    } catch (err) {
+      console.warn('Error loading date mobility data:', err);
+    } finally {
+      setIsLoadingPings(false);
+    }
+  }, [userId, deviceInfo.deviceId]);
+
+  useEffect(() => {
+    loadAvailablePingDates(userId).then(setAvailableDates);
+  }, [userId]);
+
+  useEffect(() => {
+    loadDateData(selectedDate);
+  }, [selectedDate, loadDateData]);
 
   // Telemetry & GPS State
   const [isTracking, setIsTracking] = useState(true);
@@ -155,8 +204,6 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
   const [commuteAccountId, setCommuteAccountId] = useState<string>('');
   const [isLoggingExpense, setIsLoggingExpense] = useState(false);
 
-  // Hardware Device Info (for Unique Partitioning)
-  const deviceInfo = useMemo(() => getCurrentDeviceInfo(), []);
 
   // Filter for timeline
   const [timelineFilter, setTimelineFilter] = useState<'all' | 'trip' | 'stay' | 'alert'>('all');
@@ -235,6 +282,18 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
 
       if (ping.transport_mode && ping.transport_mode !== 'unknown') {
         setClassifiedMode(ping.transport_mode as TransportMode);
+      }
+
+      // If ping is from currently selected date, append it to dailyPings
+      const pingDate = ping.recorded_at ? ping.recorded_at.slice(0, 10) : '';
+      if (pingDate === selectedDate) {
+        setDailyPings((prev) => {
+          if (prev.some((p) => p.id === ping.id)) return prev;
+          const next = [...prev, ping];
+          const synthesized = computeDailyStatsFromPings(next, selectedDate, userId, deviceInfo.deviceId);
+          setDailyStats(synthesized);
+          return next;
+        });
       }
 
       const battLabel = ping.battery_level !== null && ping.battery_level !== undefined
@@ -1054,12 +1113,62 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
       {/* ===================================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
             <div className="flex items-center gap-2">
               <Car className="w-5 h-5 text-emerald-400" />
               <h2 className="text-base font-bold text-white">Daily Commute &amp; Movement Summary</h2>
             </div>
-            <span className="text-xs font-mono text-slate-400">Today: {dailyStats?.stat_date}</span>
+
+            {/* Interactive Date Navigator */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center rounded-xl bg-slate-950 border border-slate-800 p-1">
+                <button
+                  onClick={() => {
+                    const d = new Date(selectedDate);
+                    d.setDate(d.getDate() - 1);
+                    setSelectedDate(d.toISOString().slice(0, 10));
+                  }}
+                  className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  title="Previous Day"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <div className="flex items-center gap-1.5 px-2">
+                  <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+                    className="bg-transparent text-xs font-mono text-white focus:outline-none cursor-pointer"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    const d = new Date(selectedDate);
+                    d.setDate(d.getDate() + 1);
+                    const todayStr = new Date().toISOString().slice(0, 10);
+                    const nextStr = d.toISOString().slice(0, 10);
+                    if (nextStr <= todayStr) {
+                      setSelectedDate(nextStr);
+                    }
+                  }}
+                  disabled={selectedDate >= new Date().toISOString().slice(0, 10)}
+                  className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
+                  title="Next Day"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+              {selectedDate !== new Date().toISOString().slice(0, 10) && (
+                <button
+                  onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 transition-colors cursor-pointer"
+                >
+                  Today
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1200,7 +1309,14 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
         </div>
       </div>
 
-
+      {/* ===================================================================== */}
+      {/* 2.1 SRI LANKA MOBILITY & HISTORICAL GPS TRACKING MAP */}
+      {/* ===================================================================== */}
+      <SriLankaMobilityMap
+        pings={dailyPings}
+        selectedDate={selectedDate}
+        isLoading={isLoadingPings}
+      />
 
       {/* ===================================================================== */}
       {/* 3. GEOFENCED PLACES & PROXIMITY PAYMENT REMINDERS */}
