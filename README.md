@@ -19,6 +19,7 @@
 
 <p align="center">
   <a href="docs/Apex_LifeOS_Technical_Documentation.pdf"><strong>📄 Technical Documentation (PDF)</strong></a> •
+  <a href="docs/FEATURES_UPDATE.md"><strong>✨ New Features & Map Guide</strong></a> •
   <a href="https://layanmoyura.github.io/ai-finance-tracker/tutorial.html"><strong>🎬 Beginner Video Tutorial</strong></a> •
   <a href="docs/TUTORIAL_VIDEO_SCRIPT.md"><strong>📝 Video Production Script</strong></a>
 </p>
@@ -78,6 +79,16 @@ Traditional personal finance apps only track what you spent *after* you've alrea
 * **Global Proximity Banner**: Dismissible responsive top banner (`relative xl:sticky xl:top-16`) alerts you across any module without obscuring navigation controls.
 
 ### 3. 🚗 Traffic-Resilient Speed & Commute Intelligence
+
+### 3.1 🇱🇰 Sri Lanka GPS Mobility Map & Historical Travel Inquiry
+* **📅 Historical Date-by-Date Travelling Inquiry**: Inspect movement logs, distance covered, transit time, and modal split across past calendar dates directly in the **Daily Commute & Movement Summary** section.
+* **🇱🇰 Interactive Sri Lanka Route Explorer**: Built-in dark-mode geospatial tracking map (`SriLankaMobilityMap`) rendering day-by-day companion GPS breadcrumbs with:
+  * **Dynamic Dark-Mode Leaflet Tiles**: CartoDB Dark Matter tiles via CDN with auto-fitting route bounds.
+  * **Standalone SVG Vector Map Fallback**: Mathematical Mercator projection mapping Sri Lanka coastline, provinces, and major urban hubs (Colombo, Kandy, Galle, Jaffna, Negombo, Kalutara, etc.).
+  * **Interactive Scrubber & HUD**: Step-by-step slider and 1x/2x/5x speed playback displaying real-time speed, battery level %, charging status, and coordinates.
+  * **Waypoint & Dwell Stop Badges**: Departure point (🟢), arrival destination (🏁), and dwell stop markers (🛑) for stationary periods $\ge 4\text{ minutes}$.
+* **📄 Detailed Documentation**: See [docs/FEATURES_UPDATE.md](docs/FEATURES_UPDATE.md) for full architecture, data flow diagrams, and component specifications.
+
 * **Haversine Velocity Engine**: Evaluates movement speed from browser GPS or desktop simulator:
   * 🚶 **Walking**: $1.5 - 8$ km/h
   * 🚲 **Cycling**: $8 - 25$ km/h
@@ -291,6 +302,7 @@ ai-finance-tracker/
 │   │   ├── PredictiveCashFlow.tsx       # 30/60/90-day cash projection & What-If stress sandbox
 │   │   ├── ProximityAlertBanner.tsx     # Global geofence payment alert banner
 │   │   ├── SettingsModal.tsx            # Theme, currency, timezone modal & discrete admin entry
+│   │   ├── SriLankaMobilityMap.tsx      # Dark-mode geospatial map of Sri Lanka, route scrubber & SVG fallback
 │   │   ├── SplitBillModal.tsx           # Group bill splitter with UPI/Venmo/PayPal deep links
 │   │   ├── SubscriptionManager.tsx      # Recurring billing, cancellation links & reset
 │   │   ├── TaskManager.tsx              # Operations, financial task bridge & reset
