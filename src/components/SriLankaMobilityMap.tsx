@@ -15,14 +15,11 @@ import {
   Footprints,
   Maximize2,
   Layers,
-  Sparkles,
-  Info,
 } from 'lucide-react';
 
 interface SriLankaMobilityMapProps {
   pings: DeviceLocationPing[];
   selectedDate: string; // YYYY-MM-DD
-  activePlaceNames?: { lat: number; lng: number; name: string }[];
   isLoading?: boolean;
 }
 
@@ -53,7 +50,6 @@ const SRI_LANKA_LANDMARKS = [
 export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
   pings,
   selectedDate,
-  activePlaceNames = [],
   isLoading = false,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -64,7 +60,6 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
   // Fallback & view modes
   const [leafletLoaded, setLeafletLoaded] = useState<boolean>(() => typeof (window as any).L !== 'undefined');
   const [mapMode, setMapMode] = useState<'leaflet' | 'vector'>('leaflet');
-  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Scrubber & playback states
   const [scrubIndex, setScrubIndex] = useState<number>(0);
@@ -123,7 +118,6 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
         if (isMounted) {
           console.warn('Leaflet CDN load failed; switching to SVG Vector fallback mode.');
           setMapMode('vector');
-          setLoadError('Leaflet library could not be loaded. Displaying Vector Map.');
         }
       };
       document.body.appendChild(script);
