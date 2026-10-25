@@ -3,7 +3,9 @@ import {
   calculateDistanceMeters,
   calculateDistanceKm,
   MobilityClassifier,
+  computeDailyStatsFromPings,
 } from './locationMobilityService';
+import type { DeviceLocationPing } from '../types';
 
 describe('Location & Mobility Calculations', () => {
   it('should calculate geodesic distance between two GPS coordinates correctly', () => {
@@ -49,5 +51,61 @@ describe('Location & Mobility Calculations', () => {
 
     expect(state.mode).toBe('high_speed_transit');
     expect(state.statusLabel).toContain('High-Speed');
+  });
+
+  it('should compute daily mobility stats correctly from sequential pings', () => {
+    // Pings along Colombo - Galle road (Western Province, Sri Lanka)
+    const mockPings: DeviceLocationPing[] = [
+      {
+        id: 'p1',
+        user_id: 'usr-1',
+        device_id: 'dev-1',
+        latitude: 6.9271,
+        longitude: 79.8612,
+        speed_kmh: 0,
+        recorded_at: '2026-10-25T08:00:00.000Z',
+      },
+      {
+        id: 'p2',
+        user_id: 'usr-1',
+        device_id: 'dev-1',
+        latitude: 6.9000,
+        longitude: 79.8550,
+        speed_kmh: 35,
+        transport_mode: 'vehicle',
+        recorded_at: '2026-10-25T08:10:00.000Z',
+      },
+      {
+        id: 'p3',
+        user_id: 'usr-1',
+        device_id: 'dev-1',
+        latitude: 6.8700,
+        longitude: 79.8600,
+        speed_kmh: 40,
+        transport_mode: 'vehicle',
+        recorded_at: '2026-10-25T08:20:00.000Z',
+      },
+      {
+        id: 'p4',
+        user_id: 'usr-1',
+        device_id: 'dev-1',
+        latitude: 6.8680,
+        longitude: 79.8605,
+        speed_kmh: 3.5,
+        transport_mode: 'walking',
+        recorded_at: '2026-10-25T08:30:00.000Z',
+      },
+    ];
+
+    const stats = computeDailyStatsFromPings(mockPings, '2026-10-25', 'usr-1', 'dev-1');
+
+    expect(stats.user_id).toBe('usr-1');
+    expect(stats.stat_date).toBe('2026-10-25');
+    expect(stats.total_distance_km).toBeGreaterThan(5);
+    expect(stats.vehicle_km).toBeGreaterThan(4);
+    expect(stats.walking_km).toBeGreaterThan(0.1);
+    expect(stats.top_speed_kmh).toBe(40);
+    expect(stats.transit_time_minutes).toBe(30);
+    expect(stats.estimated_transit_cost).toBeGreaterThan(0);
   });
 });

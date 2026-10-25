@@ -718,3 +718,210 @@ export function subscribeToDevicePings(
   };
 }
 
+
+
+// ============================================================================
+// Historical Travelling Analytics & Pings Querying
+// ============================================================================
+
+export async function loadDevicePingsForDate(
+  userId: string,
+  dateStr: string, // YYYY-MM-DD
+  deviceId?: string
+): Promise<DeviceLocationPing[]> {
+  try {
+    // Construct local-time based ISO bounds for the given calendar date
+    const startOfDay = new Date(`${dateStr}T00:00:00`);
+    const endOfDay = new Date(`${dateStr}T23:59:59.999`);
+    const startIso = isNaN(startOfDay.getTime()) ? `${dateStr}T00:00:00.000Z` : startOfDay.toISOString();
+    const endIso = isNaN(endOfDay.getTime()) ? `${dateStr}T23:59:59.999Z` : endOfDay.toISOString();
+
+    let query = supabase
+      .from('device_location_pings')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('recorded_at', startIso)
+      .lte('recorded_at', endIso)
+      .order('recorded_at', { ascending: true })
+      .limit(3000);
+
+    if (deviceId) {
+      query = query.eq('device_id', deviceId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Error loading device pings for date:', error.message);
+      return [];
+    }
+    return (data || []) as DeviceLocationPing[];
+  } catch (err) {
+    console.warn('Network error loading device pings:', err);
+    return [];
+  }
+}
+
+export async function loadAvailablePingDates(
+  userId: string,
+  limit = 30
+): Promise<string[]> {
+  const datesSet = new Set<string>();
+  const todayStr = new Date().toISOString().slice(0, 10);
+  datesSet.add(todayStr);
+
+  try {
+    // 1. Fetch available dates from daily_mobility_stats
+    const { data: statRows } = await supabase
+      .from('daily_mobility_stats')
+      .select('stat_date')
+      .eq('user_id', userId)
+      .order('stat_date', { ascending: false })
+      .limit(limit);
+
+    if (statRows) {
+      statRows.forEach((r: { stat_date: string }) => {
+        if (r.stat_date) datesSet.add(r.stat_date);
+      });
+    }
+
+    // 2. Fetch recent distinct ping recorded_at dates
+    const { data: pingRows } = await supabase
+      .from('device_location_pings')
+      .select('recorded_at')
+      .eq('user_id', userId)
+      .order('recorded_at', { ascending: false })
+      .limit(1000);
+
+    if (pingRows) {
+      pingRows.forEach((p: { recorded_at: string }) => {
+        if (p.recorded_at) {
+          try {
+            const d = new Date(p.recorded_at);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            datesSet.add(`${y}-${m}-${day}`);
+          } catch {
+            datesSet.add(p.recorded_at.slice(0, 10));
+          }
+        }
+      });
+    }
+  } catch (err) {
+    console.warn('Error loading available ping dates:', err);
+  }
+
+  // Sort dates descending (newest first)
+  return Array.from(datesSet).sort((a, b) => b.localeCompare(a));
+}
+
+export function computeDailyStatsFromPings(
+  pings: DeviceLocationPing[],
+  statDate: string,
+  userId: string,
+  deviceId = getDeviceId()
+): DailyMobilityStats {
+  const stats: DailyMobilityStats = {
+    user_id: userId,
+    device_id: deviceId,
+    stat_date: statDate,
+    total_distance_km: 0,
+    transit_time_minutes: 0,
+    walking_km: 0,
+    cycling_km: 0,
+    vehicle_km: 0,
+    estimated_transit_cost: 0,
+    logged_transit_cost: 0,
+    top_speed_kmh: 0,
+    active_stops_count: 0,
+    created_at: new Date().toISOString(),
+  };
+
+  if (!pings || pings.length === 0) {
+    return stats;
+  }
+
+  const sorted = [...pings].sort(
+    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+  );
+
+  let totalDistKm = 0;
+  let transitMins = 0;
+  let walkKm = 0;
+  let cycleKm = 0;
+  let vehicleKm = 0;
+  let maxSpeed = 0;
+  let stopCount = 0;
+  let dwellStartPing: DeviceLocationPing | null = null;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const current = sorted[i];
+    const speed = current.speed_kmh || 0;
+    if (speed > maxSpeed) {
+      maxSpeed = speed;
+    }
+
+    if (i === 0) continue;
+    const prev = sorted[i - 1];
+
+    const distKm = calculateDistanceKm(
+      prev.latitude,
+      prev.longitude,
+      current.latitude,
+      current.longitude
+    );
+
+    const prevTime = new Date(prev.recorded_at).getTime();
+    const currTime = new Date(current.recorded_at).getTime();
+    const deltaMins = Math.max(0, (currTime - prevTime) / (1000 * 60));
+
+    if (deltaMins > 0 && deltaMins < 90) {
+      const distFromDwell = dwellStartPing
+        ? calculateDistanceMeters(
+            dwellStartPing.latitude,
+            dwellStartPing.longitude,
+            current.latitude,
+            current.longitude
+          )
+        : distKm * 1000;
+
+      if (distFromDwell < 50) {
+        if (!dwellStartPing) dwellStartPing = prev;
+        const dwellDurationMins = (currTime - new Date(dwellStartPing.recorded_at).getTime()) / (1000 * 60);
+        if (dwellDurationMins >= 4 && dwellDurationMins - deltaMins < 4) {
+          stopCount += 1;
+        }
+      } else {
+        dwellStartPing = null;
+      }
+
+      if (distKm > 0.02) {
+        totalDistKm += distKm;
+        transitMins += deltaMins;
+
+        const mode = current.transport_mode || 'unknown';
+        if (mode === 'walking' || (speed < 6.5 && mode !== 'vehicle')) {
+          walkKm += distKm;
+        } else if (mode === 'cycling' || (speed >= 6.5 && speed < 22 && mode !== 'vehicle')) {
+          cycleKm += distKm;
+        } else {
+          vehicleKm += distKm;
+        }
+      }
+    }
+  }
+
+  // Estimated fuel / transit cost: ~ LKR 75 per vehicle km in Sri Lanka
+  const estimatedCost = Math.round(vehicleKm * 75);
+
+  stats.total_distance_km = Number(totalDistKm.toFixed(2));
+  stats.transit_time_minutes = Math.round(transitMins);
+  stats.walking_km = Number(walkKm.toFixed(2));
+  stats.cycling_km = Number(cycleKm.toFixed(2));
+  stats.vehicle_km = Number(vehicleKm.toFixed(2));
+  stats.top_speed_kmh = Number(maxSpeed.toFixed(1));
+  stats.active_stops_count = stopCount;
+  stats.estimated_transit_cost = estimatedCost;
+
+  return stats;
+}
