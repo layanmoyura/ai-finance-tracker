@@ -9,9 +9,11 @@ This document provides a comprehensive guide to the latest features, architectur
 ### 1. 🇱🇰 Sri Lanka GPS Mobility & Route Explorer Map
 A dedicated, high-contrast dark-mode geospatial tracking map component (`SriLankaMobilityMap.tsx`) designed for visualizing location breadcrumbs and travel routes:
 
-* **Dual-Engine Rendering**:
-  * **Dynamic Leaflet Engine**: Automatically injects Leaflet CSS & JS via CDN (`unpkg.com/leaflet@1.9.4`) with **CartoDB Dark Matter** dark-mode tiles without bloating npm bundle size.
-  * **Zero-Dependency SVG Vector Fallback**: Integrated mathematical Mercator projection mapping Sri Lanka's island outline (`5.85°N - 9.95°N`, `79.50°E - 81.95°E`) and landmark hubs (Colombo, Kandy, Galle, Jaffna, Negombo, Kalutara, Anuradhapura, Trincomalee, Batticaloa, Matara).
+* **Zero-Key Multi-Engine Rendering**:
+  * **🌙 Dark Mode OpenStreetMap (Default)**: Leverages standard, public, community-maintained OpenStreetMap tiles with a custom CSS dark-inversion filter (`.dark-map-tiles`). Provides full street-level zoom (up to level 19) across Sri Lanka with **zero API keys and zero watermarks**.
+  * **🗺️ Esri Dark Gray Canvas**: High-contrast dark gray base from ArcGIS Online (`server.arcgisonline.com`) with clean geographical boundaries and labels (no API key required).
+  * **☀️ Standard OpenStreetMap**: Daylight full-color OpenStreetMap basemap.
+  * **🇱🇰 Zero-Dependency SVG Vector Fallback**: Integrated mathematical Mercator projection mapping Sri Lanka's island outline (`5.85°N - 9.95°N`, `79.50°E - 81.95°E`) and landmark hubs (Colombo, Kandy, Galle, Jaffna, Negombo, Kalutara, Anuradhapura, Trincomalee, Batticaloa, Matara).
 * **Color-Coded Transport Modes**:
   * 🚗 **Motorized Vehicle / Transit**: Blue / Indigo (`#3b82f6`)
   * 🚶 **Pedestrian Walking**: Emerald Green (`#10b981`)
@@ -28,7 +30,7 @@ A dedicated, high-contrast dark-mode geospatial tracking map component (`SriLank
 * **1-Click View Actions**:
   * **Fit Route**: Zooms and pans to frame the entire day's recorded journey.
   * **🇱🇰 Sri Lanka Island View**: Instantly resets camera to view the entire island of Sri Lanka.
-  * **Toggle Engine**: Seamless switch between Leaflet Tiles and Vector SVG mode.
+  * **Basemap Switcher**: Seamlessly toggle between 🌙 Dark, 🗺️ Esri, ☀️ Street, and 🇱🇰 Vector modes.
 
 ---
 
@@ -62,7 +64,8 @@ flowchart TD
     Supabase -->|"Realtime Subscription & REST"| LocationService["locationMobilityService.ts"]
     LocationService -->|"loadDevicePingsForDate()\ncomputeDailyStatsFromPings()"| TimelineManager["LocationTimelineManager.tsx"]
     TimelineManager -->|"pings, selectedDate, isLoading"| MobilityMap["SriLankaMobilityMap.tsx"]
-    MobilityMap --> Leaflet["Leaflet Dark Matter Tiles"]
+    MobilityMap --> OSMDark["OpenStreetMap Dark Tiles (No Key)"]
+    MobilityMap --> Esri["Esri Dark Gray Canvas (No Key)"]
     MobilityMap --> SvgMap["Standalone SVG Sri Lanka Map"]
 ```
 
@@ -72,7 +75,7 @@ flowchart TD
 
 | Component / Service | Path | Description |
 |---|---|---|
-| **Sri Lanka Map Component** | [`src/components/SriLankaMobilityMap.tsx`](file:///c:/Users/acer/Downloads/ai-finance-tracker/src/components/SriLankaMobilityMap.tsx) | Interactive dark-mode map, route polylines, scrubber, and vector fallback. |
+| **Sri Lanka Map Component** | [`src/components/SriLankaMobilityMap.tsx`](file:///c:/Users/acer/Downloads/ai-finance-tracker/src/components/SriLankaMobilityMap.tsx) | Interactive dark-mode map, zero-key tile layers, route polylines, scrubber, and vector fallback. |
 | **Mobility Service** | [`src/services/locationMobilityService.ts`](file:///c:/Users/acer/Downloads/ai-finance-tracker/src/services/locationMobilityService.ts) | Geodesic math, historical ping queries (`loadDevicePingsForDate`), and statistical synthesis. |
 | **Mobility Unit Tests** | [`src/services/locationMobilityService.test.ts`](file:///c:/Users/acer/Downloads/ai-finance-tracker/src/services/locationMobilityService.test.ts) | Unit tests verifying Haversine calculations and daily stats computation from raw pings. |
 | **Timeline Manager** | [`src/components/LocationTimelineManager.tsx`](file:///c:/Users/acer/Downloads/ai-finance-tracker/src/components/LocationTimelineManager.tsx) | Main UI module hosting date navigation, summary cards, and map embedding. |
@@ -86,6 +89,7 @@ flowchart TD
 2. In the **Daily Commute & Movement Summary** card, use the date navigator to select any past date.
 3. The dashboard queries all GPS pings recorded on that date and recalculates your total distance, travel time, and modal split.
 4. Directly below the summary, the **Sri Lanka Mobility & Route Explorer** renders your exact route:
+   * Switch basemaps freely between **🌙 Dark**, **🗺️ Esri**, **☀️ Street**, and **🇱🇰 Vector** using the header pill selector.
    * Click **Play** (`▶`) to replay your day's journey.
    * Drag the slider to inspect specific timestamps, speeds, and battery levels.
    * Click **🇱🇰 Sri Lanka** to see your route in the context of the whole island.
