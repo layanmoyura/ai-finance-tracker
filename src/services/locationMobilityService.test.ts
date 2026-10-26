@@ -4,6 +4,7 @@ import {
   calculateDistanceKm,
   MobilityClassifier,
   computeDailyStatsFromPings,
+  computeJourneyTelemetry,
 } from './locationMobilityService';
 import type { DeviceLocationPing } from '../types';
 
@@ -107,5 +108,75 @@ describe('Location & Mobility Calculations', () => {
     expect(stats.top_speed_kmh).toBe(40);
     expect(stats.transit_time_minutes).toBe(30);
     expect(stats.estimated_transit_cost).toBeGreaterThan(0);
+  });
+
+  it('should compute journey telemetry with Start, In-Travel, and End Pin classifications', () => {
+    const journeyPings: DeviceLocationPing[] = [
+      {
+        id: 'start-1',
+        user_id: 'usr-1',
+        device_id: 'dev-1',
+        journey_id: 'jrn-123',
+        pin_type: 'start',
+        latitude: 6.9271,
+        longitude: 79.8612,
+        speed_kmh: 0,
+        transport_mode: 'stationary',
+        recorded_at: '2026-10-25T09:00:00.000Z',
+      },
+      {
+        id: 'wp-1',
+        user_id: 'usr-1',
+        device_id: 'dev-1',
+        journey_id: 'jrn-123',
+        pin_type: 'in_travel',
+        latitude: 6.9100,
+        longitude: 79.8580,
+        speed_kmh: 45,
+        transport_mode: 'vehicle',
+        recorded_at: '2026-10-25T09:10:00.000Z',
+      },
+      {
+        id: 'wp-2',
+        user_id: 'usr-1',
+        device_id: 'dev-1',
+        journey_id: 'jrn-123',
+        pin_type: 'in_travel',
+        latitude: 6.8900,
+        longitude: 79.8560,
+        speed_kmh: 55,
+        transport_mode: 'vehicle',
+        recorded_at: '2026-10-25T09:20:00.000Z',
+      },
+      {
+        id: 'end-1',
+        user_id: 'usr-1',
+        device_id: 'dev-1',
+        journey_id: 'jrn-123',
+        pin_type: 'end',
+        latitude: 6.8700,
+        longitude: 79.8600,
+        speed_kmh: 0,
+        transport_mode: 'stationary',
+        recorded_at: '2026-10-25T09:30:00.000Z',
+      },
+    ];
+
+    const metrics = computeJourneyTelemetry(journeyPings);
+    expect(metrics).not.toBeNull();
+    if (!metrics) return;
+
+    expect(metrics.journeyId).toBe('jrn-123');
+    expect(metrics.startPing?.id).toBe('start-1');
+    expect(metrics.endPing?.id).toBe('end-1');
+    expect(metrics.inTravelPings.length).toBe(2);
+    expect(metrics.inTravelPings[0].id).toBe('wp-1');
+    expect(metrics.inTravelPings[1].id).toBe('wp-2');
+    expect(metrics.travelTimeSeconds).toBe(1800); // 30 minutes
+    expect(metrics.totalDistanceKm).toBeGreaterThan(6);
+    expect(metrics.avgSpeedKmh).toBeGreaterThan(10);
+    expect(metrics.maxSpeedKmh).toBe(55);
+    expect(metrics.estimatedCost).toBeGreaterThan(0);
+    expect(metrics.primaryTransportMode).toBe('vehicle');
   });
 });

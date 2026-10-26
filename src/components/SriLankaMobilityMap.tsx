@@ -1,6 +1,10 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import type { DeviceLocationPing } from '../types';
 import {
+  computeJourneyTelemetry,
+  type JourneyTelemetryMetrics,
+} from '../services/locationMobilityService';
+import {
   Play,
   Pause,
   RotateCcw,
@@ -15,14 +19,22 @@ import {
   Footprints,
   Maximize2,
   Layers,
+  Zap,
+  CheckCircle2,
+  ArrowRight,
+  Edit,
 } from 'lucide-react';
 
 export type BasemapTheme = 'dark' | 'esri' | 'osm' | 'vector';
 
-interface SriLankaMobilityMapProps {
+export interface SriLankaMobilityMapProps {
   pings: DeviceLocationPing[];
   selectedDate: string; // YYYY-MM-DD
   isLoading?: boolean;
+  currencySymbol?: string;
+  onStraightAwaySubmit?: (metrics: JourneyTelemetryMetrics) => void;
+  onEditAndSubmit?: (metrics: JourneyTelemetryMetrics) => void;
+  isCostLogged?: boolean;
 }
 
 // Sri Lanka Geography Constants
@@ -53,6 +65,10 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
   pings,
   selectedDate,
   isLoading = false,
+  currencySymbol = '$',
+  onStraightAwaySubmit,
+  onEditAndSubmit,
+  isCostLogged = false,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -75,6 +91,11 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
       (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
     );
   }, [pings]);
+
+  // Derive Journey Telemetry Metrics (Start Pin, In-Travel Pins, End Pin, Time, Avg Speed, Cost)
+  const journeyMetrics = useMemo(() => {
+    return computeJourneyTelemetry(sortedPings);
+  }, [sortedPings]);
 
   // Reset scrubber when date changes or pings change
   useEffect(() => {
@@ -278,50 +299,101 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
       }).addTo(routeGroup);
     }
 
-    // Add Start Point Marker (Green Flag/Dot)
-    const firstPing = sortedPings[0];
+    // 1. Identify Start, In-Travel, and End Pins
+    const startPing = sortedPings.find((p) => p.pin_type === 'start') || sortedPings[0];
+    const endPing =
+      [...sortedPings].reverse().find((p) => p.pin_type === 'end') ||
+      sortedPings[sortedPings.length - 1];
+    const inTravelPings = sortedPings.filter((p) => p !== startPing && p !== endPing);
+
+    // 2. Add Start Point Marker (Emerald Pulsing Beacon)
     const startIcon = L.divIcon({
       className: 'start-marker-icon',
       html: `
-        <div class="relative flex items-center justify-center">
-          <span class="absolute inline-flex h-6 w-6 animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-          <span class="relative inline-flex h-5 w-5 rounded-full bg-emerald-500 border-2 border-white shadow-lg items-center justify-center text-[10px] font-bold text-white">S</span>
+        <div class="relative flex items-center justify-center cursor-pointer group">
+          <span class="absolute inline-flex h-7 w-7 animate-ping rounded-full bg-emerald-400 opacity-60"></span>
+          <span class="relative inline-flex h-6 w-6 rounded-full bg-emerald-500 border-2 border-white shadow-xl items-center justify-center text-[10px] font-black text-white">S</span>
         </div>
       `,
-      iconSize: [24, 24],
-      iconAnchor: [12, 12],
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
     });
 
-    L.marker([firstPing.latitude, firstPing.longitude], { icon: startIcon })
+    L.marker([startPing.latitude, startPing.longitude], { icon: startIcon })
       .addTo(routeGroup)
       .bindPopup(
-        `<div class="p-1 text-slate-900 font-sans text-xs">
-          <b>🟢 Departure Point</b><br/>
-          Time: ${new Date(firstPing.recorded_at).toLocaleTimeString()}<br/>
-          Lat: ${firstPing.latitude.toFixed(4)}, Lng: ${firstPing.longitude.toFixed(4)}
+        `<div class="p-1.5 text-slate-900 font-sans text-xs">
+          <b class="text-emerald-700 text-sm">🟢 Departure Point (Start Pin)</b><br/>
+          Time: <b>${new Date(startPing.recorded_at).toLocaleTimeString()}</b><br/>
+          Lat: ${startPing.latitude.toFixed(4)}, Lng: ${startPing.longitude.toFixed(4)}<br/>
+          ${startPing.battery_level ? `Battery: ${Math.round(startPing.battery_level)}%` : ''}
         </div>`
       );
 
-    // Add End Point Marker (Red/Checkered Dot)
-    const lastPing = sortedPings[sortedPings.length - 1];
+    // 3. Add In-Travel Pins (Milestone beads sampled along the trajectory)
+    const step = Math.max(1, Math.floor(inTravelPings.length / 8));
+    const sampledInTravel = inTravelPings.filter((_, idx) => idx % step === 0);
+    sampledInTravel.forEach((p, idx) => {
+      const modeEmoji =
+        p.transport_mode === 'walking'
+          ? '🚶'
+          : p.transport_mode === 'cycling'
+          ? '🚴'
+          : p.transport_mode === 'high_speed_transit'
+          ? '🚄'
+          : '🚗';
+      const inTravelIcon = L.divIcon({
+        className: 'in-travel-marker-icon',
+        html: `
+          <div class="relative flex items-center justify-center cursor-pointer">
+            <span class="inline-flex h-5 w-5 rounded-full bg-sky-500 border-2 border-slate-900 shadow-md items-center justify-center text-[9px] font-bold text-white">${modeEmoji}</span>
+          </div>
+        `,
+        iconSize: [20, 20],
+        iconAnchor: [10, 10],
+      });
+
+      L.marker([p.latitude, p.longitude], { icon: inTravelIcon })
+        .addTo(routeGroup)
+        .bindPopup(
+          `<div class="p-1.5 text-slate-900 font-sans text-xs">
+            <b class="text-sky-700 font-bold">🟡 In-Travel Waypoint #${idx + 1}</b><br/>
+            Time: ${new Date(p.recorded_at).toLocaleTimeString()}<br/>
+            Speed: <b>${p.speed_kmh.toFixed(1)} km/h</b><br/>
+            Mode: ${p.transport_mode || 'vehicle'}<br/>
+            Coords: ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}
+          </div>`
+        );
+    });
+
+    // 4. Add End Point Marker (Crimson / Checkered Flag)
     const endIcon = L.divIcon({
       className: 'end-marker-icon',
       html: `
-        <div class="relative flex items-center justify-center">
-          <span class="relative inline-flex h-5 w-5 rounded-full bg-rose-600 border-2 border-white shadow-lg items-center justify-center text-[10px] font-bold text-white">🏁</span>
+        <div class="relative flex items-center justify-center cursor-pointer">
+          <span class="relative inline-flex h-6 w-6 rounded-full bg-rose-600 border-2 border-white shadow-xl items-center justify-center text-[11px] font-black text-white">🏁</span>
         </div>
       `,
-      iconSize: [24, 24],
-      iconAnchor: [12, 12],
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
     });
 
-    L.marker([lastPing.latitude, lastPing.longitude], { icon: endIcon })
+    const travelDurationMins = Math.max(
+      1,
+      Math.round(
+        (new Date(endPing.recorded_at).getTime() - new Date(startPing.recorded_at).getTime()) /
+          60000
+      )
+    );
+
+    L.marker([endPing.latitude, endPing.longitude], { icon: endIcon })
       .addTo(routeGroup)
       .bindPopup(
-        `<div class="p-1 text-slate-900 font-sans text-xs">
-          <b>🏁 Final Recorded Ping</b><br/>
-          Time: ${new Date(lastPing.recorded_at).toLocaleTimeString()}<br/>
-          Lat: ${lastPing.latitude.toFixed(4)}, Lng: ${lastPing.longitude.toFixed(4)}
+        `<div class="p-1.5 text-slate-900 font-sans text-xs">
+          <b class="text-rose-700 text-sm">🏁 Arrival Point (End Pin)</b><br/>
+          Time: <b>${new Date(endPing.recorded_at).toLocaleTimeString()}</b><br/>
+          Trip Duration: <b>~${travelDurationMins} mins</b><br/>
+          Lat: ${endPing.latitude.toFixed(4)}, Lng: ${endPing.longitude.toFixed(4)}
         </div>`
       );
 
@@ -368,7 +440,7 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
       iconAnchor: [14, 14],
     });
 
-    const initialScrubPing = sortedPings[scrubIndex] || lastPing;
+    const initialScrubPing = sortedPings[scrubIndex] || endPing;
     const scrubberMarker = L.marker([initialScrubPing.latitude, initialScrubPing.longitude], {
       icon: radarIcon,
       zIndexOffset: 1000,
@@ -582,6 +654,119 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Journey Telemetry Summary HUD & Dual Submission Controls */}
+      {journeyMetrics && (
+        <div className="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 py-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-inner">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+            {/* Origin & Destination with Coordinates */}
+            <div className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1 text-emerald-400 font-bold">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Start:
+              </span>
+              <span className="text-slate-100 font-mono font-medium">
+                {journeyMetrics.startPing
+                  ? new Date(journeyMetrics.startPing.recorded_at).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : '--:--'}
+              </span>
+              <span className="text-slate-500 font-mono text-[11px]">
+                ({journeyMetrics.startPing?.latitude.toFixed(3)}°, {journeyMetrics.startPing?.longitude.toFixed(3)}°)
+              </span>
+            </div>
+
+            <ArrowRight className="w-3.5 h-3.5 text-slate-600 hidden sm:inline" />
+
+            <div className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1 text-rose-400 font-bold">
+                <span className="h-2.5 w-2.5 rounded-full bg-rose-500"></span>
+                End:
+              </span>
+              <span className="text-slate-100 font-mono font-medium">
+                {journeyMetrics.endPing
+                  ? new Date(journeyMetrics.endPing.recorded_at).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : '--:--'}
+              </span>
+              <span className="text-slate-500 font-mono text-[11px]">
+                ({journeyMetrics.endPing?.latitude.toFixed(3)}°, {journeyMetrics.endPing?.longitude.toFixed(3)}°)
+              </span>
+            </div>
+
+            {/* Travel Time */}
+            <div className="flex items-center gap-1 pl-2 border-l border-slate-800 text-slate-300">
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-slate-400">Travel Time:</span>
+              <span className="font-bold text-white font-mono">
+                {Math.floor(journeyMetrics.travelTimeSeconds / 60)}m {journeyMetrics.travelTimeSeconds % 60}s
+              </span>
+            </div>
+
+            {/* Average Speed */}
+            <div className="flex items-center gap-1 pl-2 border-l border-slate-800 text-slate-300">
+              <Gauge className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-slate-400">Avg Speed:</span>
+              <span className="font-bold text-cyan-300 font-mono">
+                {journeyMetrics.avgSpeedKmh} km/h
+              </span>
+            </div>
+
+            {/* Total Distance */}
+            <div className="flex items-center gap-1 pl-2 border-l border-slate-800 text-slate-300">
+              <span className="text-slate-400">Distance:</span>
+              <span className="font-bold text-white font-mono">
+                {journeyMetrics.totalDistanceKm} km
+              </span>
+            </div>
+
+            {/* Calculated Cost */}
+            <div className="flex items-center gap-1 pl-2 border-l border-slate-800">
+              <span className="text-slate-400">Calculated Cost:</span>
+              <span className="font-black text-emerald-400 font-mono text-sm">
+                {currencySymbol}{journeyMetrics.estimatedCost.toFixed(2)}
+              </span>
+            </div>
+          </div>
+
+          {/* Dual Submission Controls */}
+          <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+            {isCostLogged ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 text-xs font-semibold">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                Expense Recorded
+              </span>
+            ) : (
+              <>
+                {onStraightAwaySubmit && (
+                  <button
+                    onClick={() => onStraightAwaySubmit(journeyMetrics)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md transition-all cursor-pointer"
+                    title="Instantly submit calculated cost to ledger"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-slate-950 fill-slate-950" />
+                    <span>Straight-Away Submit</span>
+                  </button>
+                )}
+                {onEditAndSubmit && (
+                  <button
+                    onClick={() => onEditAndSubmit(journeyMetrics)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition-colors cursor-pointer"
+                    title="Review amount, select account/category, and submit"
+                  >
+                    <Edit className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Edit &amp; Submit</span>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Map Canvas Area */}
       <div className="relative w-full h-[420px] sm:h-[480px] bg-slate-950 overflow-hidden">

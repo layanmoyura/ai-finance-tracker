@@ -33,8 +33,10 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,7 +45,24 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.UUID
 import kotlin.math.sqrt
+
+data class CompletedJourneySummary(
+    val journeyId: String,
+    val startTime: String,
+    val endTime: String,
+    val startLat: Double,
+    val startLng: Double,
+    val endLat: Double,
+    val endLng: Double,
+    val durationSeconds: Long,
+    val distanceKm: Float,
+    val avgSpeedKmh: Float,
+    val maxSpeedKmh: Float,
+    val estimatedCost: Float,
+    val primaryMode: String
+)
 
 data class LiveTrackerState(
     val isTracking: Boolean = false,
@@ -59,7 +78,18 @@ data class LiveTrackerState(
     val totalPingsTransmitted: Int = 0,
     val pendingOfflineCount: Int = 0,
     val lastHttpStatus: String = "Idle",
-    val statusMessage: String = "Service ready"
+    val statusMessage: String = "Service ready",
+    // Journey Lifecycle State
+    val isJourneyActive: Boolean = false,
+    val activeJourneyId: String? = null,
+    val journeyStartTimeMs: Long = 0L,
+    val journeyDurationSeconds: Long = 0L,
+    val journeyDistanceKm: Float = 0.0f,
+    val journeyAvgSpeedKmh: Float = 0.0f,
+    val journeyStartLat: Double = 0.0,
+    val journeyStartLng: Double = 0.0,
+    val journeyMaxSpeedKmh: Float = 0.0f,
+    val completedJourney: CompletedJourneySummary? = null
 )
 
 class LocationTrackingService : Service(), SensorEventListener {
@@ -91,6 +121,16 @@ class LocationTrackingService : Service(), SensorEventListener {
     private var pingCounter: Int = 0
     private var consecutiveDispatches: Int = 0
 
+    // Active Journey Session Variables
+    private var isJourneyActive: Boolean = false
+    private var activeJourneyId: String? = null
+    private var journeyStartTimeMs: Long = 0L
+    private var journeyStartIsoTime: String = ""
+    private var journeyStartLocation: Location? = null
+    private var journeyDistanceMeters: Float = 0.0f
+    private var journeyMaxSpeedKmh: Float = 0.0f
+    private var journeyTickerJob: Job? = null
+
     companion object {
         private const val TAG = "LocationTrackingService"
         private const val CHANNEL_ID = "apex_location_tracker_channel"
@@ -98,6 +138,9 @@ class LocationTrackingService : Service(), SensorEventListener {
 
         const val ACTION_START = "com.apex.locationtracker.START"
         const val ACTION_STOP = "com.apex.locationtracker.STOP"
+        const val ACTION_START_JOURNEY = "com.apex.locationtracker.START_JOURNEY"
+        const val ACTION_END_JOURNEY = "com.apex.locationtracker.END_JOURNEY"
+        const val ACTION_CLEAR_COMPLETED_JOURNEY = "com.apex.locationtracker.CLEAR_COMPLETED_JOURNEY"
 
         private val _liveState = MutableStateFlow(LiveTrackerState())
         val liveState: StateFlow<LiveTrackerState> = _liveState.asStateFlow()
@@ -117,11 +160,27 @@ class LocationTrackingService : Service(), SensorEventListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                if (isJourneyActive) {
+                    endJourneySession()
+                }
                 stopTracking()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
-            ACTION_START, null -> {
+            ACTION_START -> {
+                startTrackingInForeground()
+            }
+            ACTION_START_JOURNEY -> {
+                startTrackingInForeground()
+                startJourneySession()
+            }
+            ACTION_END_JOURNEY -> {
+                endJourneySession()
+            }
+            ACTION_CLEAR_COMPLETED_JOURNEY -> {
+                _liveState.value = _liveState.value.copy(completedJourney = null)
+            }
+            null -> {
                 startTrackingInForeground()
             }
         }
@@ -345,6 +404,17 @@ class LocationTrackingService : Service(), SensorEventListener {
         val mode = classifyTransportMode(speedKmh)
         val now = System.currentTimeMillis()
 
+        // Accumulate active journey distance
+        if (isJourneyActive && lastRecordedLocation != null) {
+            val deltaMeters = lastRecordedLocation!!.distanceTo(location)
+            if (deltaMeters in 0.5f..500.0f) {
+                journeyDistanceMeters += deltaMeters
+                if (speedKmh > journeyMaxSpeedKmh) {
+                    journeyMaxSpeedKmh = speedKmh
+                }
+            }
+        }
+
         // Read battery information
         val (batteryLevel, isCharging) = getBatteryInfo()
 
@@ -390,6 +460,7 @@ class LocationTrackingService : Service(), SensorEventListener {
             lastReportedMode = mode
             consecutiveDispatches++
 
+            val currentPinType = if (isJourneyActive) "in_travel" else "ambient"
             val ping = LocationPingEntity(
                 userId = supabaseManager.userId,
                 deviceId = supabaseManager.deviceId,
@@ -403,7 +474,9 @@ class LocationTrackingService : Service(), SensorEventListener {
                 batteryLevel = batteryLevel,
                 isCharging = isCharging,
                 transportMode = mode,
-                recordedAt = isoTimestamp
+                recordedAt = isoTimestamp,
+                journeyId = if (isJourneyActive) activeJourneyId else null,
+                pinType = currentPinType
             )
 
             serviceScope.launch {
@@ -477,6 +550,9 @@ class LocationTrackingService : Service(), SensorEventListener {
     }
 
     private fun stopTracking() {
+        if (isJourneyActive) {
+            endJourneySession()
+        }
         unregisterKineticSensors()
         fusedLocationClient.removeLocationUpdates(locationCallback)
         smoothedSpeedKmh = 0.0f
@@ -498,6 +574,175 @@ class LocationTrackingService : Service(), SensorEventListener {
         )
     }
 
+    private fun startJourneySession() {
+        val journeyId = UUID.randomUUID().toString()
+        val nowMs = SystemClock.elapsedRealtime()
+        val isoTimestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date())
+
+        isJourneyActive = true
+        activeJourneyId = journeyId
+        journeyStartTimeMs = nowMs
+        journeyStartIsoTime = isoTimestamp
+        journeyDistanceMeters = 0.0f
+        journeyMaxSpeedKmh = 0.0f
+
+        val loc = lastRecordedLocation
+        journeyStartLocation = loc
+        val startLat = loc?.latitude ?: 0.0
+        val startLng = loc?.longitude ?: 0.0
+
+        supabaseManager.setActiveJourney(journeyId, isoTimestamp, startLat, startLng)
+
+        serviceScope.launch {
+            supabaseManager.createJourneyRecord(
+                journeyId = journeyId,
+                startTime = isoTimestamp,
+                startLat = startLat,
+                startLng = startLng,
+                primaryMode = lastReportedMode
+            )
+
+            // Immediately send Start Pin if location is available
+            if (loc != null) {
+                val (batLevel, isChg) = getBatteryInfo()
+                val startPing = LocationPingEntity(
+                    userId = supabaseManager.userId,
+                    deviceId = supabaseManager.deviceId,
+                    deviceName = supabaseManager.deviceName,
+                    latitude = loc.latitude,
+                    longitude = loc.longitude,
+                    altitude = if (loc.hasAltitude()) loc.altitude else null,
+                    accuracyMeters = if (loc.hasAccuracy()) loc.accuracy else null,
+                    speedKmh = smoothedSpeedKmh,
+                    heading = if (loc.hasBearing()) loc.bearing else null,
+                    batteryLevel = batLevel,
+                    isCharging = isChg,
+                    transportMode = lastReportedMode,
+                    recordedAt = isoTimestamp,
+                    journeyId = journeyId,
+                    pinType = "start"
+                )
+                supabaseManager.dispatchPing(startPing)
+            }
+        }
+
+        journeyTickerJob?.cancel()
+        journeyTickerJob = serviceScope.launch {
+            while (isJourneyActive) {
+                val elapsedSec = maxOf(0L, (SystemClock.elapsedRealtime() - journeyStartTimeMs) / 1000L)
+                val distKm = journeyDistanceMeters / 1000.0f
+                val avgSpeed = if (elapsedSec > 0) (distKm / (elapsedSec / 3600.0f)) else 0.0f
+                _liveState.value = _liveState.value.copy(
+                    isJourneyActive = true,
+                    activeJourneyId = journeyId,
+                    journeyStartTimeMs = journeyStartTimeMs,
+                    journeyDurationSeconds = elapsedSec,
+                    journeyDistanceKm = distKm,
+                    journeyAvgSpeedKmh = avgSpeed,
+                    journeyStartLat = startLat,
+                    journeyStartLng = startLng,
+                    journeyMaxSpeedKmh = journeyMaxSpeedKmh
+                )
+                delay(1000L)
+            }
+        }
+        Log.i(TAG, "Started journey session $journeyId")
+    }
+
+    private fun endJourneySession() {
+        if (!isJourneyActive) return
+        val journeyId = activeJourneyId ?: return
+        val endMs = SystemClock.elapsedRealtime()
+        val durationSec = maxOf(1L, (endMs - journeyStartTimeMs) / 1000L)
+        val distKm = journeyDistanceMeters / 1000.0f
+        val avgSpeed = if (durationSec > 0) (distKm / (durationSec / 3600.0f)) else 0.0f
+        val maxSpeed = journeyMaxSpeedKmh
+        val primaryMode = lastReportedMode
+        val estimatedCost = calculateEstimatedCost(distKm, primaryMode)
+
+        val endLoc = lastRecordedLocation
+        val endLat = endLoc?.latitude ?: 0.0
+        val endLng = endLoc?.longitude ?: 0.0
+        val isoEndTime = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date())
+
+        isJourneyActive = false
+        journeyTickerJob?.cancel()
+        journeyTickerJob = null
+        supabaseManager.setActiveJourney(null)
+
+        val summary = CompletedJourneySummary(
+            journeyId = journeyId,
+            startTime = journeyStartIsoTime,
+            endTime = isoEndTime,
+            startLat = journeyStartLocation?.latitude ?: 0.0,
+            startLng = journeyStartLocation?.longitude ?: 0.0,
+            endLat = endLat,
+            endLng = endLng,
+            durationSeconds = durationSec,
+            distanceKm = distKm,
+            avgSpeedKmh = avgSpeed,
+            maxSpeedKmh = maxSpeed,
+            estimatedCost = estimatedCost,
+            primaryMode = primaryMode
+        )
+
+        _liveState.value = _liveState.value.copy(
+            isJourneyActive = false,
+            activeJourneyId = null,
+            completedJourney = summary
+        )
+
+        serviceScope.launch {
+            if (endLoc != null) {
+                val (batLevel, isChg) = getBatteryInfo()
+                val endPing = LocationPingEntity(
+                    userId = supabaseManager.userId,
+                    deviceId = supabaseManager.deviceId,
+                    deviceName = supabaseManager.deviceName,
+                    latitude = endLoc.latitude,
+                    longitude = endLoc.longitude,
+                    altitude = if (endLoc.hasAltitude()) endLoc.altitude else null,
+                    accuracyMeters = if (endLoc.hasAccuracy()) endLoc.accuracy else null,
+                    speedKmh = smoothedSpeedKmh,
+                    heading = if (endLoc.hasBearing()) endLoc.bearing else null,
+                    batteryLevel = batLevel,
+                    isCharging = isChg,
+                    transportMode = primaryMode,
+                    recordedAt = isoEndTime,
+                    journeyId = journeyId,
+                    pinType = "end"
+                )
+                supabaseManager.dispatchPing(endPing)
+            }
+
+            supabaseManager.completeJourneyRecord(
+                journeyId = journeyId,
+                endTime = isoEndTime,
+                endLat = endLat,
+                endLng = endLng,
+                distanceKm = distKm,
+                durationSeconds = durationSec,
+                avgSpeedKmh = avgSpeed,
+                maxSpeedKmh = maxSpeed,
+                estimatedCost = estimatedCost,
+                primaryMode = primaryMode
+            )
+        }
+        Log.i(TAG, "Completed journey $journeyId: ${distKm}km, ${durationSec}s, avg ${avgSpeed}km/h")
+    }
+
+    private fun calculateEstimatedCost(distKm: Float, mode: String): Float {
+        return when (mode) {
+            "walking", "cycling" -> 0.0f
+            "high_speed_transit" -> (distKm * 0.08f).coerceAtLeast(1.5f)
+            else -> (distKm * 0.18f).coerceAtLeast(2.5f)
+        }
+    }
+
     private fun buildNotification(contentText: String): Notification {
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -510,7 +755,7 @@ class LocationTrackingService : Service(), SensorEventListener {
         )
 
         val stopIntent = Intent(this, LocationTrackingService::class.java).apply {
-            action = ACTION_STOP
+            action = if (isJourneyActive) ACTION_END_JOURNEY else ACTION_STOP
         }
         val pendingStop = PendingIntent.getService(
             this,
@@ -519,14 +764,26 @@ class LocationTrackingService : Service(), SensorEventListener {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val actionLabel = if (isJourneyActive) "End Journey" else "Pause"
+        val titleText = if (isJourneyActive) {
+            val sec = _liveState.value.journeyDurationSeconds
+            val hh = sec / 3600
+            val mm = (sec % 3600) / 60
+            val ss = sec % 60
+            val timeFmt = if (hh > 0) String.format(Locale.US, "%02d:%02d:%02d", hh, mm, ss) else String.format(Locale.US, "%02d:%02d", mm, ss)
+            "🚀 Active Journey • $timeFmt"
+        } else {
+            "🛰️ Apex LifeOS Kinetic Tracker Active"
+        }
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("🛰️ Apex LifeOS Kinetic Tracker Active")
+            .setContentTitle(titleText)
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pendingOpenApp)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(android.R.drawable.ic_media_pause, "Pause", pendingStop)
+            .addAction(android.R.drawable.ic_media_pause, actionLabel, pendingStop)
             .build()
     }
 

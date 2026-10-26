@@ -19,6 +19,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -323,15 +326,22 @@ class SupabaseManager private constructor(context: Context) {
         if (!includeTransportMode) {
             tree.remove("transport_mode")
         }
+        if (ping.journeyId == null) {
+            tree.remove("journey_id")
+        }
         return tree.toString()
     }
 
     private fun serializePings(pings: List<LocationPingEntity>, includeTransportMode: Boolean): String {
         val array = gson.toJsonTree(pings).asJsonArray
-        if (!includeTransportMode) {
-            for (elem in array) {
-                if (elem.isJsonObject) {
-                    elem.asJsonObject.remove("transport_mode")
+        for (elem in array) {
+            if (elem.isJsonObject) {
+                val obj = elem.asJsonObject
+                if (!includeTransportMode) {
+                    obj.remove("transport_mode")
+                }
+                if (obj.has("journey_id") && obj.get("journey_id").isJsonNull) {
+                    obj.remove("journey_id")
                 }
             }
         }
@@ -594,5 +604,241 @@ class SupabaseManager private constructor(context: Context) {
         dao.clearAllPings()
         Log.i(TAG, "Cleared $count offline cached pings.")
         count
+    }
+
+    // ========================================================================
+    // Journey Lifecycle & Commute Expense Methods
+    // ========================================================================
+
+    fun getActiveJourneyId(): String? = prefs.getString("active_journey_id", null)
+    fun getActiveJourneyStartTime(): String = prefs.getString("active_journey_start_time", "") ?: ""
+    fun getActiveJourneyStartLat(): Double = prefs.getFloat("active_journey_start_lat", 0.0f).toDouble()
+    fun getActiveJourneyStartLng(): Double = prefs.getFloat("active_journey_start_lng", 0.0f).toDouble()
+
+    fun setActiveJourney(id: String?, startTime: String = "", lat: Double = 0.0, lng: Double = 0.0) {
+        prefs.edit()
+            .putString("active_journey_id", id)
+            .putString("active_journey_start_time", startTime)
+            .putFloat("active_journey_start_lat", lat.toFloat())
+            .putFloat("active_journey_start_lng", lng.toFloat())
+            .apply()
+    }
+
+    suspend fun createJourneyRecord(
+        journeyId: String,
+        startTime: String,
+        startLat: Double,
+        startLng: Double,
+        primaryMode: String = "vehicle"
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase not configured"))
+        val endpoint = "$supabaseUrl/rest/v1/mobility_journeys"
+        val payload = JsonObject().apply {
+            addProperty("id", journeyId)
+            addProperty("user_id", userId)
+            addProperty("device_id", deviceId)
+            addProperty("device_name", deviceName)
+            addProperty("title", "Active Journey")
+            addProperty("status", "in_progress")
+            addProperty("start_time", startTime)
+            addProperty("start_latitude", startLat)
+            addProperty("start_longitude", startLng)
+            addProperty("primary_transport_mode", primaryMode)
+        }
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val request = Request.Builder()
+            .url(endpoint)
+            .addHeader("apikey", anonKey)
+            .addHeader("Authorization", "Bearer $anonKey")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Prefer", "return=minimal")
+            .post(payload.toString().toRequestBody(mediaType))
+            .build()
+        try {
+            client.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) Result.success(true)
+                else Result.failure(IOException("HTTP ${resp.code}: ${resp.message}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun completeJourneyRecord(
+        journeyId: String,
+        endTime: String,
+        endLat: Double,
+        endLng: Double,
+        distanceKm: Float,
+        durationSeconds: Long,
+        avgSpeedKmh: Float,
+        maxSpeedKmh: Float,
+        estimatedCost: Float,
+        primaryMode: String = "vehicle"
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase not configured"))
+        val endpoint = "$supabaseUrl/rest/v1/mobility_journeys?id=eq.$journeyId"
+        val payload = JsonObject().apply {
+            addProperty("status", "completed")
+            addProperty("end_time", endTime)
+            addProperty("end_latitude", endLat)
+            addProperty("end_longitude", endLng)
+            addProperty("total_distance_km", distanceKm)
+            addProperty("travel_time_seconds", durationSeconds)
+            addProperty("avg_speed_kmh", avgSpeedKmh)
+            addProperty("max_speed_kmh", maxSpeedKmh)
+            addProperty("estimated_cost", estimatedCost)
+            addProperty("primary_transport_mode", primaryMode)
+        }
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val request = Request.Builder()
+            .url(endpoint)
+            .addHeader("apikey", anonKey)
+            .addHeader("Authorization", "Bearer $anonKey")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Prefer", "return=minimal")
+            .patch(payload.toString().toRequestBody(mediaType))
+            .build()
+        try {
+            client.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) Result.success(true)
+                else Result.failure(IOException("HTTP ${resp.code}: ${resp.message}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    data class AccountOption(val id: String, val name: String, val balance: Double)
+
+    suspend fun fetchUserAccounts(): List<AccountOption> = withContext(Dispatchers.IO) {
+        if (!isConfigured) return@withContext emptyList()
+        val endpoint = "$supabaseUrl/rest/v1/accounts?select=id,name,balance&user_id=eq.$userId&order=name.asc"
+        val request = Request.Builder()
+            .url(endpoint)
+            .addHeader("apikey", anonKey)
+            .addHeader("Authorization", "Bearer $anonKey")
+            .get()
+            .build()
+        try {
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext emptyList()
+                val body = resp.body?.string() ?: return@withContext emptyList()
+                val array = JsonParser.parseString(body).asJsonArray
+                val list = mutableListOf<AccountOption>()
+                for (elem in array) {
+                    val obj = elem.asJsonObject
+                    list.add(
+                        AccountOption(
+                            id = obj.get("id").asString,
+                            name = obj.get("name").asString,
+                            balance = if (obj.has("balance") && !obj.get("balance").isJsonNull) obj.get("balance").asDouble else 0.0
+                        )
+                    )
+                }
+                list
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun submitJourneyExpense(
+        journeyId: String?,
+        amount: Double,
+        description: String,
+        accountId: String? = null,
+        isBusiness: Boolean = false
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase not configured"))
+        
+        var targetAccountId = accountId
+        if (targetAccountId.isNullOrBlank()) {
+            val accounts = fetchUserAccounts()
+            targetAccountId = accounts.firstOrNull()?.id
+        }
+        if (targetAccountId.isNullOrBlank()) {
+            return@withContext Result.failure(IllegalStateException("No account found to log expense against"))
+        }
+
+        var transportCategoryId: String? = null
+        try {
+            val catEndpoint = "$supabaseUrl/rest/v1/categories?select=id,name&user_id=eq.$userId&limit=15"
+            val catReq = Request.Builder()
+                .url(catEndpoint)
+                .addHeader("apikey", anonKey)
+                .addHeader("Authorization", "Bearer $anonKey")
+                .get()
+                .build()
+            client.newCall(catReq).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val raw = resp.body?.string() ?: ""
+                    val arr = JsonParser.parseString(raw).asJsonArray
+                    for (el in arr) {
+                        val cname = el.asJsonObject.get("name").asString.lowercase(Locale.US)
+                        if (cname.contains("transport") || cname.contains("commute") || cname.contains("travel")) {
+                            transportCategoryId = el.asJsonObject.get("id").asString
+                            break
+                        }
+                    }
+                    if (transportCategoryId == null && arr.size() > 0) {
+                        transportCategoryId = arr[0].asJsonObject.get("id").asString
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        val txEndpoint = "$supabaseUrl/rest/v1/transactions"
+        val txPayload = JsonObject().apply {
+            addProperty("user_id", userId)
+            addProperty("account_id", targetAccountId)
+            if (transportCategoryId != null) {
+                addProperty("category_id", transportCategoryId)
+            }
+            addProperty("amount", amount)
+            addProperty("type", "expense")
+            addProperty("description", description)
+            addProperty("transaction_date", SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()))
+        }
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val txReq = Request.Builder()
+            .url(txEndpoint)
+            .addHeader("apikey", anonKey)
+            .addHeader("Authorization", "Bearer $anonKey")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Prefer", "return=minimal")
+            .post(txPayload.toString().toRequestBody(mediaType))
+            .build()
+
+        try {
+            client.newCall(txReq).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val err = parseSupabaseError(resp.body?.string() ?: "")
+                    return@withContext Result.failure(IOException("Failed to log transaction: $err"))
+                }
+            }
+
+            if (!journeyId.isNullOrBlank()) {
+                val updEndpoint = "$supabaseUrl/rest/v1/mobility_journeys?id=eq.$journeyId"
+                val updPayload = JsonObject().apply {
+                    addProperty("is_cost_logged", true)
+                    addProperty("logged_transit_cost", amount)
+                    addProperty("is_business_trip", isBusiness)
+                }
+                val updReq = Request.Builder()
+                    .url(updEndpoint)
+                    .addHeader("apikey", anonKey)
+                    .addHeader("Authorization", "Bearer $anonKey")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Prefer", "return=minimal")
+                    .patch(updPayload.toString().toRequestBody(mediaType))
+                    .build()
+                client.newCall(updReq).execute().close()
+            }
+
+            Result.success(true)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }
