@@ -224,6 +224,45 @@ CREATE TABLE IF NOT EXISTS public.mobility_timeline_events (
     notes TEXT,
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
+    journey_id UUID DEFAULT NULL,
+    start_latitude DOUBLE PRECISION DEFAULT NULL,
+    start_longitude DOUBLE PRECISION DEFAULT NULL,
+    end_latitude DOUBLE PRECISION DEFAULT NULL,
+    end_longitude DOUBLE PRECISION DEFAULT NULL,
+    start_address TEXT DEFAULT NULL,
+    end_address TEXT DEFAULT NULL,
+    related_transaction_id UUID REFERENCES public.transactions(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Dedicated Mobility Journeys (Full Lifecycle Tracking & Telemetry Aggregations)
+CREATE TABLE IF NOT EXISTS public.mobility_journeys (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    device_id TEXT NOT NULL,
+    device_name TEXT,
+    title TEXT NOT NULL DEFAULT 'Active Journey',
+    status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed', 'cancelled')),
+    start_time TIMESTAMPTZ NOT NULL,
+    end_time TIMESTAMPTZ,
+    start_latitude DOUBLE PRECISION NOT NULL,
+    start_longitude DOUBLE PRECISION NOT NULL,
+    start_address TEXT,
+    end_latitude DOUBLE PRECISION,
+    end_longitude DOUBLE PRECISION,
+    end_address TEXT,
+    total_distance_km NUMERIC(8, 2) DEFAULT 0,
+    travel_time_seconds INTEGER DEFAULT 0,
+    avg_speed_kmh NUMERIC(6, 1) DEFAULT 0,
+    max_speed_kmh NUMERIC(6, 1) DEFAULT 0,
+    estimated_cost NUMERIC(10, 2) DEFAULT 0,
+    is_cost_logged BOOLEAN DEFAULT FALSE,
+    logged_transit_cost NUMERIC(10, 2) DEFAULT 0,
+    primary_transport_mode TEXT DEFAULT 'vehicle',
+    is_business_trip BOOLEAN DEFAULT FALSE,
+    tax_deduction_amount NUMERIC(10, 2) DEFAULT 0,
+    related_transaction_id UUID REFERENCES public.transactions(id) ON DELETE SET NULL,
+    notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -246,7 +285,7 @@ CREATE TABLE IF NOT EXISTS public.daily_mobility_stats (
     UNIQUE(user_id, stat_date)
 );
 
--- Device Location Pings (Companion Android APK Telemetry Beacon)
+-- Device Location Pings (Companion Android APK Telemetry Beacon with 3-Tier Pin Types)
 CREATE TABLE IF NOT EXISTS public.device_location_pings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
@@ -261,6 +300,8 @@ CREATE TABLE IF NOT EXISTS public.device_location_pings (
     battery_level REAL,
     is_charging BOOLEAN DEFAULT FALSE,
     transport_mode TEXT DEFAULT 'unknown',
+    journey_id UUID DEFAULT NULL,
+    pin_type TEXT DEFAULT 'in_travel' CHECK (pin_type IN ('start', 'in_travel', 'end', 'ambient')),
     recorded_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -268,11 +309,13 @@ CREATE TABLE IF NOT EXISTS public.device_location_pings (
 -- Mobility Row Level Security (RLS)
 ALTER TABLE public.saved_places ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mobility_timeline_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.mobility_journeys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.daily_mobility_stats ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.device_location_pings ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users manage own saved places" ON public.saved_places FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users manage own mobility events" ON public.mobility_timeline_events FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users manage own mobility journeys" ON public.mobility_journeys FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users manage own mobility stats" ON public.daily_mobility_stats FOR ALL USING (auth.uid() = user_id);
 -- Allow authenticated users to view/manage their location pings
 CREATE POLICY "Users manage own location pings" ON public.device_location_pings FOR ALL USING (auth.uid() = user_id);

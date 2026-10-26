@@ -59,6 +59,9 @@ class MainActivity : ComponentActivity() {
                     supabaseManager = supabaseManager,
                     onStartService = { startLocationService() },
                     onStopService = { stopLocationService() },
+                    onStartJourney = { startJourneyService() },
+                    onEndJourney = { endJourneyService() },
+                    onClearCompletedJourney = { clearCompletedJourney() },
                     onRequestBatteryWhitelist = { requestIgnoreBatteryOptimization() }
                 )
             }
@@ -83,6 +86,31 @@ class MainActivity : ComponentActivity() {
         startService(intent)
     }
 
+    private fun startJourneyService() {
+        val intent = Intent(this, LocationTrackingService::class.java).apply {
+            action = LocationTrackingService.ACTION_START_JOURNEY
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
+    private fun endJourneyService() {
+        val intent = Intent(this, LocationTrackingService::class.java).apply {
+            action = LocationTrackingService.ACTION_END_JOURNEY
+        }
+        startService(intent)
+    }
+
+    private fun clearCompletedJourney() {
+        val intent = Intent(this, LocationTrackingService::class.java).apply {
+            action = LocationTrackingService.ACTION_CLEAR_COMPLETED_JOURNEY
+        }
+        startService(intent)
+    }
+
     @SuppressLint("BatteryLife")
     private fun requestIgnoreBatteryOptimization() {
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -103,6 +131,9 @@ fun TrackerAppScreen(
     supabaseManager: SupabaseManager,
     onStartService: () -> Unit,
     onStopService: () -> Unit,
+    onStartJourney: () -> Unit,
+    onEndJourney: () -> Unit,
+    onClearCompletedJourney: () -> Unit,
     onRequestBatteryWhitelist: () -> Unit
 ) {
     val liveState by LocationTrackingService.liveState.collectAsState()
@@ -112,6 +143,13 @@ fun TrackerAppScreen(
     var showConfigModal by remember { mutableStateOf(!supabaseManager.isConfigured) }
     var offlineCount by remember { mutableIntStateOf(0) }
     var isSyncing by remember { mutableStateOf(false) }
+
+    // Commute expense state
+    var isSubmittingExpense by remember { mutableStateOf(false) }
+    var isEditingExpense by remember { mutableStateOf(false) }
+    var editedAmount by remember { mutableStateOf("") }
+    var editedNotes by remember { mutableStateOf("") }
+    var isBusinessTrip by remember { mutableStateOf(false) }
 
     LaunchedEffect(liveState.totalPingsTransmitted, liveState.lastHttpStatus, liveState.pendingOfflineCount) {
         offlineCount = supabaseManager.getOfflineCount()
@@ -197,6 +235,94 @@ fun TrackerAppScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = Color.White)
                         ) {
                             Text("Pair App", color = Color.Black, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            // Active Journey Card (when journey is in progress)
+            if (liveState.isJourneyActive) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "🚀 ACTIVE JOURNEY",
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF34D399),
+                                fontSize = 13.sp
+                            )
+                            val sec = liveState.journeyDurationSeconds
+                            val hh = sec / 3600
+                            val mm = (sec % 3600) / 60
+                            val ss = sec % 60
+                            val timerStr = if (hh > 0) String.format(Locale.US, "%02d:%02d:%02d", hh, mm, ss) else String.format(Locale.US, "%02d:%02d", mm, ss)
+                            Text(
+                                text = "⏱️ $timerStr",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 14.sp
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(Color(0xFF047857))
+                        )
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column {
+                                Text("Distance", color = Color(0xFFA7F3D0), fontSize = 11.sp)
+                                Text(
+                                    text = String.format(Locale.US, "%.2f km", liveState.journeyDistanceKm),
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Avg Speed", color = Color(0xFFA7F3D0), fontSize = 11.sp)
+                                Text(
+                                    text = String.format(Locale.US, "%.1f km/h", liveState.journeyAvgSpeedKmh),
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Top Speed", color = Color(0xFFA7F3D0), fontSize = 11.sp)
+                                Text(
+                                    text = String.format(Locale.US, "%.1f km/h", liveState.journeyMaxSpeedKmh),
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+
+                        if (liveState.journeyStartLat != 0.0) {
+                            Text(
+                                text = "🟢 Start Pin: ${String.format(Locale.US, "%.4f", liveState.journeyStartLat)}°, ${String.format(Locale.US, "%.4f", liveState.journeyStartLng)}°",
+                                color = Color(0xFFD1FAE5),
+                                fontSize = 11.sp
+                            )
                         }
                     }
                 }
@@ -383,25 +509,39 @@ fun TrackerAppScreen(
                 }
             }
 
-            // Tracking Control Button
-            Button(
-                onClick = {
-                    if (liveState.isTracking) {
-                        onStopService()
-                    } else {
-                        // Guard: ensure companion app is paired before starting background tracking
+            // Dedicated Start & End Journey Controls
+            if (liveState.isJourneyActive) {
+                // SEPARATE BUTTON TO END JOURNEY
+                Button(
+                    onClick = { onEndJourney() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE11D48)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Default.Stop, contentDescription = null, tint = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "🏁 END JOURNEY",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = Color.White
+                    )
+                }
+            } else {
+                // SEPARATE BUTTON TO START JOURNEY
+                Button(
+                    onClick = {
                         if (!supabaseManager.isConfigured) {
-                            Toast.makeText(context, "⚠️ Please pair companion app before starting tracking!", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "⚠️ Please pair companion app before starting journey!", Toast.LENGTH_LONG).show()
                             showConfigModal = true
                             return@Button
                         }
-
-                        // Check location and notification permissions
                         val hasFine = ContextCompat.checkSelfPermission(
                             context,
                             Manifest.permission.ACCESS_FINE_LOCATION
                         ) == PackageManager.PERMISSION_GRANTED
-
                         val hasNotification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             ContextCompat.checkSelfPermission(
                                 context,
@@ -424,30 +564,54 @@ fun TrackerAppScreen(
                             }
                             locationPermissionsLauncher.launch(perms.toTypedArray())
                         } else {
+                            onStartJourney()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "🚀 START JOURNEY",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = Color.White
+                    )
+                }
+
+                // Ambient Background Sensor Beacon Toggle
+                OutlinedButton(
+                    onClick = {
+                        if (liveState.isTracking) {
+                            onStopService()
+                        } else {
+                            if (!supabaseManager.isConfigured) {
+                                Toast.makeText(context, "⚠️ Please pair companion app first!", Toast.LENGTH_SHORT).show()
+                                showConfigModal = true
+                                return@OutlinedButton
+                            }
                             onStartService()
                         }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (liveState.isTracking) Color(0xFFE11D48) else Color(0xFF10B981)
-                ),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(
-                    imageVector = if (liveState.isTracking) Icons.Default.Stop else Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    tint = Color.White
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (liveState.isTracking) "STOP BACKGROUND TRACKING" else "START BACKGROUND TRACKING",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = Color.White
-                )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = if (liveState.isTracking) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = if (liveState.isTracking) Color(0xFFE11D48) else Color(0xFF38BDF8)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (liveState.isTracking) "Pause Background Sensor" else "Start Ambient Tracking",
+                        fontSize = 13.sp,
+                        color = Color.White
+                    )
+                }
             }
 
             // Battery Whitelist Exemption Banner
@@ -630,6 +794,196 @@ fun TrackerAppScreen(
                     TextButton(onClick = { showConfigModal = false }) {
                         Text("Cancel")
                     }
+                }
+            }
+        )
+    }
+
+    // Post-Journey Completed Dialog & Dual Submission Workflow
+    liveState.completedJourney?.let { summary ->
+        AlertDialog(
+            onDismissRequest = {
+                isEditingExpense = false
+                onClearCompletedJourney()
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🏁 Journey Completed", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                ) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Travel Time:", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                val m = summary.durationSeconds / 60
+                                val s = summary.durationSeconds % 60
+                                Text("${m}m ${s}s", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Average Speed:", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                Text(String.format(Locale.US, "%.1f km/h", summary.avgSpeedKmh), color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Distance:", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                Text(String.format(Locale.US, "%.2f km", summary.distanceKm), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Calculated Cost:", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                Text(String.format(Locale.US, "$%.2f", summary.estimatedCost), color = Color(0xFF10B981), fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                            }
+                            if (summary.startLat != 0.0) {
+                                Text("🟢 Origin: ${String.format(Locale.US, "%.4f, %.4f", summary.startLat, summary.startLng)}", color = Color(0xFF64748B), fontSize = 10.sp)
+                            }
+                            if (summary.endLat != 0.0) {
+                                Text("🏁 Destination: ${String.format(Locale.US, "%.4f, %.4f", summary.endLat, summary.endLng)}", color = Color(0xFF64748B), fontSize = 10.sp)
+                            }
+                        }
+                    }
+
+                    if (!isEditingExpense) {
+                        Text(
+                            text = "Record this commute expenditure directly into your ledger balance sheet:",
+                            fontSize = 12.sp,
+                            color = Color(0xFF94A3B8)
+                        )
+
+                        // Mode A: Straight Away Submit (1-Click)
+                        Button(
+                            onClick = {
+                                coroutineScope.launch {
+                                    isSubmittingExpense = true
+                                    val desc = "Commute: ${String.format(Locale.US, "%.1f", summary.distanceKm)}km (${summary.durationSeconds / 60}m, avg ${String.format(Locale.US, "%.1f", summary.avgSpeedKmh)} km/h)"
+                                    val res = supabaseManager.submitJourneyExpense(
+                                        journeyId = summary.journeyId,
+                                        amount = summary.estimatedCost.toDouble(),
+                                        description = desc
+                                    )
+                                    isSubmittingExpense = false
+                                    if (res.isSuccess) {
+                                        Toast.makeText(context, "✅ $${String.format(Locale.US, "%.2f", summary.estimatedCost)} recorded to ledger!", Toast.LENGTH_SHORT).show()
+                                        onClearCompletedJourney()
+                                    } else {
+                                        Toast.makeText(context, "❌ Submission failed: ${res.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            },
+                            enabled = !isSubmittingExpense,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                text = if (isSubmittingExpense) "Submitting..." else "⚡ Straight Away Submit ($${String.format(Locale.US, "%.2f", summary.estimatedCost)})",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
+                            )
+                        }
+
+                        // Mode B: Trigger Edit and Submit
+                        OutlinedButton(
+                            onClick = {
+                                editedAmount = String.format(Locale.US, "%.2f", summary.estimatedCost)
+                                isEditingExpense = true
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("✏️ Edit & Submit", color = Color.White)
+                        }
+                    } else {
+                        // Editable Form
+                        Text("Customize & record commute expense:", fontSize = 12.sp, color = Color(0xFF94A3B8))
+
+                        OutlinedTextField(
+                            value = editedAmount,
+                            onValueChange = { editedAmount = it },
+                            label = { Text("Expense Amount ($)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF10B981),
+                                unfocusedBorderColor = Color(0xFF334155),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            )
+                        )
+
+                        OutlinedTextField(
+                            value = editedNotes,
+                            onValueChange = { editedNotes = it },
+                            label = { Text("Notes / Purpose (Optional)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF10B981),
+                                unfocusedBorderColor = Color(0xFF334155),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            )
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("💼 Business Commute", color = Color.White, fontSize = 13.sp)
+                            Switch(
+                                checked = isBusinessTrip,
+                                onCheckedChange = { isBusinessTrip = it }
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                val amt = editedAmount.toDoubleOrNull() ?: summary.estimatedCost.toDouble()
+                                coroutineScope.launch {
+                                    isSubmittingExpense = true
+                                    val desc = "Commute: ${String.format(Locale.US, "%.1f", summary.distanceKm)}km (${summary.durationSeconds / 60}m) ${if (editedNotes.isNotBlank()) "- $editedNotes" else ""}"
+                                    val res = supabaseManager.submitJourneyExpense(
+                                        journeyId = summary.journeyId,
+                                        amount = amt,
+                                        description = desc,
+                                        isBusiness = isBusinessTrip
+                                    )
+                                    isSubmittingExpense = false
+                                    if (res.isSuccess) {
+                                        Toast.makeText(context, "✅ $${String.format(Locale.US, "%.2f", amt)} logged to ledger!", Toast.LENGTH_SHORT).show()
+                                        isEditingExpense = false
+                                        onClearCompletedJourney()
+                                    } else {
+                                        Toast.makeText(context, "❌ Failed: ${res.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            },
+                            enabled = !isSubmittingExpense,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                text = if (isSubmittingExpense) "Recording..." else "Deduct & Record to Ledger",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = {
+                    isEditingExpense = false
+                    onClearCompletedJourney()
+                }) {
+                    Text("Dismiss", color = Color(0xFF94A3B8))
                 }
             }
         )

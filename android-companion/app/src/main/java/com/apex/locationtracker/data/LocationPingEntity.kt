@@ -47,6 +47,12 @@ data class LocationPingEntity(
     @SerializedName("transport_mode")
     val transportMode: String,
 
+    @SerializedName("journey_id")
+    val journeyId: String? = null,
+
+    @SerializedName("pin_type")
+    val pinType: String = "in_travel",
+
     @SerializedName("recorded_at")
     val recordedAt: String
 )

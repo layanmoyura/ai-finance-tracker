@@ -204,6 +204,8 @@ export interface SavedPlace {
 
 export type TimelineEventType = 'trip' | 'stay' | 'payment_alert';
 
+export type PinType = 'start' | 'in_travel' | 'end' | 'ambient';
+
 export interface MobilityTimelineEvent {
   id: string;
   user_id: string;
@@ -221,12 +223,51 @@ export interface MobilityTimelineEvent {
   max_speed_kmh?: number;
   estimated_cost?: number;
   is_cost_logged?: boolean;
+  logged_transit_cost?: number;
   place_name?: string;
   notes?: string;
   latitude?: number;
   longitude?: number;
+  journey_id?: string | null;
+  start_latitude?: number | null;
+  start_longitude?: number | null;
+  end_latitude?: number | null;
+  end_longitude?: number | null;
+  start_address?: string | null;
+  end_address?: string | null;
+  related_transaction_id?: string | null;
   is_business_trip?: boolean;
   tax_deduction_amount?: number;
+  created_at?: string;
+}
+
+export interface MobilityJourney {
+  id: string;
+  user_id: string;
+  device_id: string;
+  device_name?: string;
+  title: string;
+  status: 'in_progress' | 'completed' | 'cancelled';
+  start_time: string;
+  end_time?: string | null;
+  start_latitude: number;
+  start_longitude: number;
+  start_address?: string | null;
+  end_latitude?: number | null;
+  end_longitude?: number | null;
+  end_address?: string | null;
+  total_distance_km: number;
+  travel_time_seconds: number;
+  avg_speed_kmh: number;
+  max_speed_kmh: number;
+  estimated_cost: number;
+  is_cost_logged: boolean;
+  logged_transit_cost?: number;
+  primary_transport_mode?: TransportMode;
+  is_business_trip?: boolean;
+  tax_deduction_amount?: number;
+  related_transaction_id?: string | null;
+  notes?: string | null;
   created_at?: string;
 }
 
@@ -263,6 +304,8 @@ export interface DeviceLocationPing {
   battery_level?: number | null;
   is_charging?: boolean;
   transport_mode?: TransportMode | 'unknown';
+  journey_id?: string | null;
+  pin_type?: PinType;
   recorded_at: string;
   created_at?: string;
 }

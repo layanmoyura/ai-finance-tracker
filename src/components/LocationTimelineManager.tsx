@@ -34,6 +34,7 @@ import {
   SIMULATION_SCENARIOS,
   getEventsStorageKey,
   getStatsStorageKey,
+  type JourneyTelemetryMetrics,
 } from '../services/locationMobilityService';
 import { getCurrentDeviceInfo } from '../services/deviceSessionService';
 import { supabase, supabaseUrl, supabaseAnonKey } from '../supabaseClient';
@@ -203,6 +204,10 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
   const [loggingTrip, setLoggingTrip] = useState<MobilityTimelineEvent | null>(null);
   const [commuteAccountId, setCommuteAccountId] = useState<string>('');
   const [isLoggingExpense, setIsLoggingExpense] = useState(false);
+  const [customExpenseAmount, setCustomExpenseAmount] = useState<string>('');
+  const [customCategoryId, setCustomCategoryId] = useState<string>('');
+  const [isBusinessCommute, setIsBusinessCommute] = useState<boolean>(false);
+  const [commuteNotes, setCommuteNotes] = useState<string>('');
 
 
   // Filter for timeline
@@ -529,21 +534,123 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
     }
   };
 
-  // 6. Commute Expense 1-Click Logging to Ledger
+  // 6. Commute Expense Submission Handlers (Straight-Away Submit vs Edit & Submit)
+
+  // Mode A: Straight-Away Submit (1-Click Instant)
+  const handleStraightAwaySubmit = async (metrics: JourneyTelemetryMetrics) => {
+    if (!accounts || accounts.length === 0) {
+      showError('Please add a payment account first to record expenses.');
+      return;
+    }
+
+    const defaultAcc = accounts[0];
+    const transportCat = categories.find((c) =>
+      c.name.toLowerCase().includes('transport') || c.name.toLowerCase().includes('commute')
+    ) || categories[0];
+
+    const amountToLog = metrics.estimatedCost || 2.5;
+    const desc = `Commute: ${metrics.totalDistanceKm} km (${Math.round(metrics.travelTimeSeconds / 60)} mins, avg ${metrics.avgSpeedKmh} km/h)`;
+
+    try {
+      const { error: txErr } = await supabase
+        .from('transactions')
+        .insert({
+          user_id: userId,
+          account_id: defaultAcc.id,
+          category_id: transportCat?.id || null,
+          amount: amountToLog,
+          type: 'expense',
+          description: desc,
+          transaction_date: selectedDate || new Date().toISOString().slice(0, 10),
+        })
+        .select('*')
+        .single();
+
+      if (txErr) {
+        showError(`Failed to record commute expense: ${txErr.message}`);
+        return;
+      }
+
+      // Deduct from account balance in database
+      const newBalance = Number(defaultAcc.balance) - amountToLog;
+      await supabase.from('accounts').update({ balance: newBalance }).eq('id', defaultAcc.id);
+
+      // If tied to a journey ID, update journey record
+      if (metrics.journeyId) {
+        await supabase
+          .from('mobility_journeys')
+          .update({ is_cost_logged: true, logged_transit_cost: amountToLog })
+          .eq('id', metrics.journeyId);
+      }
+
+      // Update daily mobility stats
+      await updateDailyMobilityStats(
+        userId,
+        { logged_transit_cost: amountToLog },
+        deviceInfo.deviceId
+      );
+      const today = new Date().toISOString().slice(0, 10);
+      const refreshedStats = await loadDailyMobilityStats(userId, today, deviceInfo.deviceId);
+      setDailyStats(refreshedStats);
+
+      // Notify parent to refresh transactions & balance sheets
+      onTransactionsUpdated();
+    } catch (err: any) {
+      console.error('Error straight-away logging commute expense:', err);
+      showError(`Error logging expense: ${err.message}`);
+    }
+  };
+
+  // Open Edit & Submit Modal pre-populated with Journey Metrics
+  const handleOpenEditAndSubmit = (metrics: JourneyTelemetryMetrics) => {
+    const syntheticTrip: MobilityTimelineEvent = {
+      id: metrics.journeyId || `journey-${Date.now()}`,
+      user_id: userId,
+      event_type: 'trip',
+      title: `${metrics.totalDistanceKm} km ${metrics.primaryTransportMode} commute`,
+      start_time: metrics.startPing?.recorded_at || new Date().toISOString(),
+      end_time: metrics.endPing?.recorded_at || null,
+      duration_seconds: metrics.travelTimeSeconds,
+      distance_km: metrics.totalDistanceKm,
+      avg_speed_kmh: metrics.avgSpeedKmh,
+      max_speed_kmh: metrics.maxSpeedKmh,
+      estimated_cost: metrics.estimatedCost,
+      mode: metrics.primaryTransportMode,
+      start_latitude: metrics.startPing?.latitude,
+      start_longitude: metrics.startPing?.longitude,
+      end_latitude: metrics.endPing?.latitude,
+      end_longitude: metrics.endPing?.longitude,
+      journey_id: metrics.journeyId || null,
+    };
+
+    setLoggingTrip(syntheticTrip);
+    setCustomExpenseAmount(metrics.estimatedCost.toFixed(2));
+    setCommuteAccountId(accounts[0]?.id || '');
+    const transportCat = categories.find((c) =>
+      c.name.toLowerCase().includes('transport') || c.name.toLowerCase().includes('commute')
+    );
+    setCustomCategoryId(transportCat?.id || categories[0]?.id || '');
+    setIsBusinessCommute(false);
+    setCommuteNotes('');
+  };
+
+  // Mode B: Confirm Edit & Submit Handler
   const handleConfirmLogExpense = async () => {
     if (!loggingTrip || !commuteAccountId) return;
     setIsLoggingExpense(true);
 
     try {
-      // Find or assign transportation category
-      const transportCat = categories.find((c) =>
+      // Find or assign category
+      const targetCatId = customCategoryId || categories.find((c) =>
         c.name.toLowerCase().includes('transport') || c.name.toLowerCase().includes('commute')
-      ) || categories[0];
+      )?.id || categories[0]?.id || null;
 
-      const amountToLog = loggingTrip.estimated_cost || 2.5;
-      const desc = `Commute: ${loggingTrip.title} (${loggingTrip.distance_km || 0} km${
+      const amountToLog = parseFloat(customExpenseAmount) || loggingTrip.estimated_cost || 2.5;
+      const baseDesc = `Commute: ${loggingTrip.title} (${loggingTrip.distance_km || 0} km${
         loggingTrip.in_traffic ? ', Traffic Delay' : ''
       })`;
+      const desc = commuteNotes.trim() ? `${baseDesc} - ${commuteNotes.trim()}` : baseDesc;
+      const taxDeduction = isBusinessCommute ? Number(((loggingTrip.distance_km || 0) * 0.67).toFixed(2)) : 0;
 
       // Insert transaction into Supabase
       const { error: txErr } = await supabase
@@ -551,11 +658,11 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
         .insert({
           user_id: userId,
           account_id: commuteAccountId,
-          category_id: transportCat?.id || null,
+          category_id: targetCatId,
           amount: amountToLog,
           type: 'expense',
           description: desc,
-          transaction_date: new Date().toISOString().slice(0, 10),
+          transaction_date: selectedDate || new Date().toISOString().slice(0, 10),
         })
         .select('*')
         .single();
@@ -572,11 +679,27 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
         const updatedTrip: MobilityTimelineEvent = {
           ...loggingTrip,
           is_cost_logged: true,
+          logged_transit_cost: amountToLog,
+          is_business_trip: isBusinessCommute,
+          tax_deduction_amount: taxDeduction,
           device_id: deviceInfo.deviceId,
           device_name: deviceInfo.deviceName,
         };
         await persistTimelineEvent(userId, updatedTrip, deviceInfo.deviceId);
         setEvents((prev) => prev.map((ev) => (ev.id === updatedTrip.id ? updatedTrip : ev)));
+
+        // If journey_id is present, update mobility_journeys
+        if (loggingTrip.journey_id) {
+          await supabase
+            .from('mobility_journeys')
+            .update({
+              is_cost_logged: true,
+              logged_transit_cost: amountToLog,
+              is_business_trip: isBusinessCommute,
+              tax_deduction_amount: taxDeduction,
+            })
+            .eq('id', loggingTrip.journey_id);
+        }
 
         // Update daily mobility stats
         await updateDailyMobilityStats(
@@ -592,10 +715,10 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
         onTransactionsUpdated();
       }
 
-
       setLoggingTrip(null);
     } catch (err) {
       console.error('Error logging commute expense:', err);
+      showError('Failed to record commute expense.');
     } finally {
       setIsLoggingExpense(false);
     }
@@ -1316,6 +1439,10 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
         pings={dailyPings}
         selectedDate={selectedDate}
         isLoading={isLoadingPings}
+        currencySymbol={symbol}
+        onStraightAwaySubmit={handleStraightAwaySubmit}
+        onEditAndSubmit={handleOpenEditAndSubmit}
+        isCostLogged={events.some((e) => e.is_cost_logged && e.start_time.startsWith(selectedDate))}
       />
 
       {/* ===================================================================== */}
@@ -1804,17 +1931,41 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
                   <span className="font-mono text-white font-bold">{loggingTrip.distance_km || 14.8} km</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Estimated Cost:</span>
+                  <span className="text-slate-400">Calculated Telemetry Cost:</span>
                   <span className="font-mono text-emerald-400 font-bold text-sm">
                     {symbol}{loggingTrip.estimated_cost?.toFixed(2) || '2.50'}
                   </span>
                 </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Category:</span>
-                  <span className="text-blue-400 font-medium">Transportation</span>
-                </div>
+                {loggingTrip.start_latitude && (
+                  <div className="flex justify-between text-[11px] text-slate-500 font-mono">
+                    <span>Origin:</span>
+                    <span>{loggingTrip.start_latitude.toFixed(4)}, {loggingTrip.start_longitude?.toFixed(4)}</span>
+                  </div>
+                )}
+                {loggingTrip.end_latitude && (
+                  <div className="flex justify-between text-[11px] text-slate-500 font-mono">
+                    <span>Destination:</span>
+                    <span>{loggingTrip.end_latitude.toFixed(4)}, {loggingTrip.end_longitude?.toFixed(4)}</span>
+                  </div>
+                )}
               </div>
 
+              {/* Editable Amount */}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                  Expense Amount ({symbol}) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={customExpenseAmount}
+                  onChange={(e) => setCustomExpenseAmount(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-emerald-400 font-bold focus:outline-none focus:border-emerald-500"
+                  placeholder={loggingTrip.estimated_cost?.toFixed(2) || '2.50'}
+                />
+              </div>
+
+              {/* Account Dropdown */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
                   Deduct From Account *
@@ -1830,6 +1981,56 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* Category Dropdown */}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                  Expense Category
+                </label>
+                <select
+                  value={customCategoryId}
+                  onChange={(e) => setCustomCategoryId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Business Commute Switch */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800">
+                <div>
+                  <span className="text-xs font-bold text-white block">💼 Business Commute</span>
+                  <span className="text-[11px] text-slate-400">
+                    {isBusinessCommute
+                      ? `Tax deduction: ${symbol}${((loggingTrip.distance_km || 0) * 0.67).toFixed(2)}`
+                      : 'Tag for tax deduction and business expense ledger'}
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={isBusinessCommute}
+                  onChange={(e) => setIsBusinessCommute(e.target.checked)}
+                  className="h-4 w-4 rounded accent-emerald-500 cursor-pointer"
+                />
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                  Notes / Trip Objective (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={commuteNotes}
+                  onChange={(e) => setCommuteNotes(e.target.value)}
+                  placeholder="e.g. Client on-site meeting, parking / toll included"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
               </div>
 
               <div className="pt-2 flex justify-end gap-3">
