@@ -67,7 +67,7 @@ export interface ClassifiedMobilityState {
 export class MobilityClassifier {
   private peakSpeedKmh = 0;
   private recentSpeeds: number[] = [];
-  private currentMode: TransportMode = 'stationary';
+  private currentMode: TransportMode = 'vehicle';
   private inTraffic = false;
   private tripStartTime: number | null = null;
   private lastMovingTime: number = Date.now();
@@ -81,8 +81,7 @@ export class MobilityClassifier {
   }
 
   /**
-   * Evaluates instantaneous speed with hysteresis, peak velocity memory,
-   * and stop-and-go rolling variance to prevent traffic misclassification.
+   * Evaluates speed and traffic conditions without stationary or cycling heuristics.
    */
   public evaluate(
     instantSpeedKmh: number,
@@ -121,11 +120,7 @@ export class MobilityClassifier {
           ? '🚗 In Vehicle (Heavy Traffic / Congestion)'
           : manualModeLock === 'vehicle'
           ? '🚗 In Vehicle (Free Flowing)'
-          : manualModeLock === 'cycling'
-          ? '🚲 Cycling'
-          : manualModeLock === 'walking'
-          ? '🚶 Walking'
-          : '⏸️ Stationary',
+          : '🚶 Walking',
         confidence: 0.99,
       };
     }
@@ -154,14 +149,11 @@ export class MobilityClassifier {
       };
     }
 
-    // 4. Traffic Jam & Congestion Detection (CRUCIAL):
-    // If the trip already hit a peak vehicle speed >= 25 km/h OR recent speeds showed vehicle bursts,
-    // and speed is now crawling between 0 and 18 km/h:
+    // 4. Traffic Jam & Congestion Detection:
     const hasMotorizedHistory = this.peakSpeedKmh >= 24;
     const timeSinceMovement = now - this.lastMovingTime;
 
     if (hasMotorizedHistory && timeSinceMovement < 4 * 60 * 1000) {
-      // Stopped at red light or crawling in traffic
       if (speed <= 1.5) {
         this.currentMode = 'vehicle';
         this.inTraffic = true;
@@ -192,20 +184,8 @@ export class MobilityClassifier {
       };
     }
 
-    // 5. Cycling range (8 to 25 km/h)
-    if (speed >= 8) {
-      this.currentMode = 'cycling';
-      this.inTraffic = false;
-      return {
-        mode: 'cycling',
-        inTraffic: false,
-        statusLabel: '🚲 Cycling / Micro-Mobility',
-        confidence: 0.85,
-      };
-    }
-
-    // 6. Walking range (1.5 to 8 km/h)
-    if (speed >= 1.5) {
+    // 5. Walking range (1.5 to 8 km/h)
+    if (speed >= 1.5 && speed < 8) {
       this.currentMode = 'walking';
       this.inTraffic = false;
       return {
@@ -216,18 +196,11 @@ export class MobilityClassifier {
       };
     }
 
-    // 7. Stationary / Dwell
-    // If stopped for more than 4 minutes, reset peak speed
-    if (timeSinceMovement > 4 * 60 * 1000) {
-      this.peakSpeedKmh = 0;
-      this.tripStartTime = null;
-      this.currentMode = 'stationary';
-    }
-
+    // 6. In Transit / Vehicle Default
     return {
-      mode: 'stationary',
+      mode: 'vehicle',
       inTraffic: false,
-      statusLabel: '⏸️ Stationary / Dwell',
+      statusLabel: '🚗 In Transit',
       confidence: 0.95,
     };
   }
@@ -235,7 +208,7 @@ export class MobilityClassifier {
   public resetTrip() {
     this.peakSpeedKmh = 0;
     this.recentSpeeds = [];
-    this.currentMode = 'stationary';
+    this.currentMode = 'vehicle';
     this.inTraffic = false;
     this.tripStartTime = null;
     this.lastMovingTime = Date.now();
@@ -902,8 +875,6 @@ export function computeDailyStatsFromPings(
         const mode = current.transport_mode || 'unknown';
         if (mode === 'walking' || (speed < 6.5 && mode !== 'vehicle')) {
           walkKm += distKm;
-        } else if (mode === 'cycling' || (speed >= 6.5 && speed < 22 && mode !== 'vehicle')) {
-          cycleKm += distKm;
         } else {
           vehicleKm += distKm;
         }
@@ -990,25 +961,21 @@ export function computeJourneyTelemetry(pings: DeviceLocationPing[]): JourneyTel
   const avgSpeedKmh = hours > 0 ? Number((totalDistanceKm / hours).toFixed(1)) : 0;
   const maxSpeedKmh = avgSpeedKmh;
 
-  // Derive mode from calculated speed
+  // Derive mode from calculated speed (without stationary or cycling)
   let primaryTransportMode: TransportMode = 'vehicle';
-  if (avgSpeedKmh < 1.5) {
-    primaryTransportMode = 'stationary';
-  } else if (avgSpeedKmh < 12) {
+  if (avgSpeedKmh < 8) {
     primaryTransportMode = 'walking';
-  } else if (avgSpeedKmh < 28) {
-    primaryTransportMode = 'cycling';
   } else if (avgSpeedKmh >= 80) {
     primaryTransportMode = 'high_speed_transit';
   } else {
     primaryTransportMode = 'vehicle';
   }
 
-  // Cost estimation: zero for pedestrian/cyclist, $0.18/km default with $2.50 base
-  const ratePerKm = primaryTransportMode === 'walking' || primaryTransportMode === 'cycling' ? 0 : 0.18;
+  // Cost estimation: zero for pedestrian, $0.18/km default with $2.50 base
+  const ratePerKm = primaryTransportMode === 'walking' ? 0 : 0.18;
   const estimatedCost = Number(
     Math.max(
-      primaryTransportMode === 'walking' || primaryTransportMode === 'cycling' ? 0 : 2.5,
+      primaryTransportMode === 'walking' ? 0 : 2.5,
       totalDistanceKm * ratePerKm
     ).toFixed(2)
   );

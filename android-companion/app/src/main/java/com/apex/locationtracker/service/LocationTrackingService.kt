@@ -65,7 +65,7 @@ data class LiveTrackerState(
     val longitude: Double = 0.0,
     val speedKmh: Float = 0.0f,
     val accuracyMeters: Float = 0.0f,
-    val transportMode: String = "stationary",
+    val transportMode: String = "vehicle",
     val speedSensingMethod: String = "Calculated (Distance / Time)",
     val batteryLevel: Float = 0.0f,
     val isCharging: Boolean = false,
@@ -259,7 +259,7 @@ class LocationTrackingService : Service() {
                 statusMessage = "Tracking Route: ${String.format(Locale.US, "%.2f", distKm)} km • ${String.format(Locale.US, "%.1f", calculatedSpeedKmh)} km/h"
             )
 
-            val summaryText = "${String.format(Locale.US, "%.2f", distKm)} km • ${String.format(Locale.US, "%.1f", calculatedSpeedKmh)} km/h ($mode)"
+            val summaryText = "${String.format(Locale.US, "%.2f", distKm)} km • ${String.format(Locale.US, "%.1f", calculatedSpeedKmh)} km/h"
             notificationManager.notify(NOTIFICATION_ID, buildNotification(summaryText))
 
             // Dispatch 10s intermediate waypoint ping to track the route
@@ -302,7 +302,7 @@ class LocationTrackingService : Service() {
                 longitude = location.longitude,
                 speedKmh = 0.0f,
                 accuracyMeters = location.accuracy,
-                transportMode = "stationary",
+                transportMode = "vehicle",
                 batteryLevel = batteryLevel,
                 isCharging = isCharging,
                 lastPingTimestamp = isoTimestamp,
@@ -313,9 +313,7 @@ class LocationTrackingService : Service() {
 
     private fun classifyTransportMode(speedKmh: Float): String {
         return when {
-            speedKmh < 1.5f -> "stationary"
-            speedKmh < 12.0f -> "walking"
-            speedKmh < 28.0f -> "cycling"
+            speedKmh < 8.0f -> "walking"
             speedKmh >= 80.0f -> "high_speed_transit"
             else -> "vehicle"
         }
@@ -345,7 +343,7 @@ class LocationTrackingService : Service() {
         _liveState.value = _liveState.value.copy(
             isTracking = false,
             speedKmh = 0.0f,
-            transportMode = "stationary",
+            transportMode = "vehicle",
             statusMessage = "Tracking paused"
         )
     }
@@ -396,7 +394,7 @@ class LocationTrackingService : Service() {
                     heading = if (loc.hasBearing()) loc.bearing else null,
                     batteryLevel = batLevel,
                     isCharging = isChg,
-                    transportMode = "stationary",
+                    transportMode = "vehicle",
                     recordedAt = isoTimestamp,
                     journeyId = journeyId,
                     pinType = "start"
@@ -453,7 +451,7 @@ class LocationTrackingService : Service() {
         val startLat = startLoc?.latitude ?: 0.0
         val startLng = startLoc?.longitude ?: 0.0
 
-        // Distance: use accumulated route distance, or straight-line distance if stationary/single hop
+        // Distance: use accumulated route distance, or straight-line distance if single hop
         val straightDistMeters = if (startLoc != null && endLoc != null) startLoc.distanceTo(endLoc) else 0.0f
         val distMeters = if (journeyDistanceMeters >= straightDistMeters * 0.8f) journeyDistanceMeters else straightDistMeters
         val distKm = distMeters / 1000.0f
@@ -541,7 +539,7 @@ class LocationTrackingService : Service() {
 
     private fun calculateEstimatedCost(distKm: Float, mode: String): Float {
         return when (mode) {
-            "walking", "cycling" -> 0.0f
+            "walking" -> 0.0f
             "high_speed_transit" -> (distKm * 0.08f).coerceAtLeast(1.5f)
             else -> (distKm * 0.18f).coerceAtLeast(2.5f)
         }

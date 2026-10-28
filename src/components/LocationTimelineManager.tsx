@@ -50,7 +50,6 @@ import {
   CheckCircle2,
   Sparkles,
   Car,
-  Bike,
   Footprints,
   Train,
   Clock,
@@ -178,7 +177,7 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
   const [manualModeLock, setManualModeLock] = useState<TransportMode | 'auto'>('auto');
   const [currentCoords, setCurrentCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [currentSpeedKmh, setCurrentSpeedKmh] = useState<number>(0);
-  const [classifiedMode, setClassifiedMode] = useState<TransportMode>('stationary');
+  const [classifiedMode, setClassifiedMode] = useState<TransportMode>('vehicle');
   const [isInTraffic, setIsInTraffic] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>('Listening to background Android APK telemetry...');
 
@@ -793,7 +792,7 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
       setDailyStats(cleanStats);
       classifierRef.current.resetTrip();
       setCurrentSpeedKmh(0);
-      setClassifiedMode('stationary');
+      setClassifiedMode('vehicle');
       setIsInTraffic(false);
       setStatusMessage('Timeline and daily mobility reset strictly to zero.');
     } catch (err: unknown) {
@@ -822,13 +821,6 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
             <span>Walking / Pedestrian</span>
           </span>
         );
-      case 'cycling':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-            <Bike className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Cycling / Micro-Mobility</span>
-          </span>
-        );
       case 'vehicle':
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
@@ -846,8 +838,8 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
       default:
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700">
-            <MapPin className="w-3.5 h-3.5 text-slate-400" />
-            <span>Stationary / Dwell</span>
+            <Car className="w-3.5 h-3.5 text-slate-400" />
+            <span>In Transit</span>
           </span>
         );
     }
@@ -1117,9 +1109,7 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
             >
               <option value="auto">Auto-Detect (Smart)</option>
               <option value="vehicle">🚗 Lock: Driving / Transit</option>
-              <option value="cycling">🚲 Lock: Cycling</option>
               <option value="walking">🚶 Lock: Walking</option>
-              <option value="stationary">⏸️ Lock: Stationary</option>
             </select>
           </div>
         </div>
@@ -1333,7 +1323,6 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
               <div className="flex items-center gap-3 font-mono text-[11px]">
                 <span className="text-blue-400">🚗 {dailyStats?.vehicle_km ?? 0} km vehicle</span>
                 <span className="text-emerald-400">🚶 {dailyStats?.walking_km ?? 0} km walk</span>
-                <span className="text-cyan-400">🚲 {dailyStats?.cycling_km ?? 0} km bike</span>
               </div>
             </div>
             <div className="h-2.5 rounded-full bg-slate-950 flex overflow-hidden border border-slate-800">
@@ -1352,13 +1341,6 @@ export const LocationTimelineManager: React.FC<LocationTimelineManagerProps> = (
                     }}
                     className="bg-emerald-500 h-full transition-all"
                     title="Walking"
-                  />
-                  <div
-                    style={{
-                      width: `${(dailyStats.cycling_km / dailyStats.total_distance_km) * 100}%`,
-                    }}
-                    className="bg-cyan-500 h-full transition-all"
-                    title="Cycling"
                   />
                 </>
               ) : (

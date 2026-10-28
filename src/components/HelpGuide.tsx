@@ -559,15 +559,15 @@ export const HelpGuide: React.FC<HelpGuideProps> = ({ onNavigateTab }) => {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
                     <div className="p-3 bg-slate-900 rounded-xl border border-slate-850">
                       <span className="font-bold text-emerald-400 block mb-0.5">🚶 Walking</span>
-                      <span className="text-[11px] text-slate-400">1.5 – 8 km/h. Zero monetary fuel cost; logs active wellness distance.</span>
-                    </div>
-                    <div className="p-3 bg-slate-900 rounded-xl border border-slate-850">
-                      <span className="font-bold text-cyan-400 block mb-0.5">🚲 Cycling</span>
-                      <span className="text-[11px] text-slate-400">8 – 25 km/h. Micro-mobility &amp; eco-friendly active transit.</span>
+                      <span className="text-[11px] text-slate-400">Under 8 km/h. Zero monetary fuel cost; logs active wellness distance.</span>
                     </div>
                     <div className="p-3 bg-slate-900 rounded-xl border border-slate-850">
                       <span className="font-bold text-blue-400 block mb-0.5">🚗 Motorized Vehicle</span>
-                      <span className="text-[11px] text-slate-400">&ge; 25 km/h. Calculates distance &amp; estimates fuel or transit fare.</span>
+                      <span className="text-[11px] text-slate-400">8 – 80 km/h. Calculates route distance &amp; estimates fuel or transit fare.</span>
+                    </div>
+                    <div className="p-3 bg-slate-900 rounded-xl border border-slate-850">
+                      <span className="font-bold text-purple-400 block mb-0.5">🚄 High-Speed Rail</span>
+                      <span className="text-[11px] text-slate-400">&ge; 80 km/h. Expressway and rail transit rates.</span>
                     </div>
                   </div>
                   <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 mt-2">
