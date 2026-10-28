@@ -30,12 +30,12 @@ describe('Location & Mobility Calculations', () => {
     expect(calculateDistanceMeters(lat, lon, lat, lon)).toBe(0);
   });
 
-  it('should classify stationary state when speed is 0', () => {
+  it('should classify vehicle transit state when speed is 0', () => {
     const classifier = new MobilityClassifier();
     const state = classifier.evaluate(0);
 
-    expect(state.mode).toBe('stationary');
-    expect(state.statusLabel).toContain('Stationary');
+    expect(state.mode).toBe('vehicle');
+    expect(state.statusLabel).toContain('In Transit');
   });
 
   it('should classify vehicle mode when moving at driving speed', () => {
@@ -121,7 +121,7 @@ describe('Location & Mobility Calculations', () => {
         latitude: 6.9271,
         longitude: 79.8612,
         speed_kmh: 0,
-        transport_mode: 'stationary',
+        transport_mode: 'vehicle',
         recorded_at: '2026-10-25T09:00:00.000Z',
       },
       {
@@ -133,7 +133,7 @@ describe('Location & Mobility Calculations', () => {
         latitude: 6.8700,
         longitude: 79.8600,
         speed_kmh: 0,
-        transport_mode: 'stationary',
+        transport_mode: 'vehicle',
         recorded_at: '2026-10-25T09:10:00.000Z',
       },
     ];
@@ -165,7 +165,7 @@ describe('Location & Mobility Calculations', () => {
         latitude: 6.9271,
         longitude: 79.8612,
         speed_kmh: 0,
-        transport_mode: 'stationary',
+        transport_mode: 'vehicle',
         recorded_at: '2026-10-25T10:00:00.000Z',
       },
       {

@@ -16,7 +16,6 @@ import {
   Clock,
   MapPin,
   Car,
-  Bike,
   Footprints,
   Maximize2,
   Layers,
@@ -282,12 +281,10 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
       const p2 = sortedPings[i + 1];
 
       let color = '#3b82f6'; // vehicle default
-      const mode = p2.transport_mode || 'unknown';
-      if (mode === 'walking' || p2.speed_kmh < 6.5) {
+      const mode = p2.transport_mode || 'vehicle';
+      if (mode === 'walking') {
         color = '#10b981'; // emerald
-      } else if (mode === 'cycling' || (p2.speed_kmh >= 6.5 && p2.speed_kmh < 22)) {
-        color = '#06b6d4'; // cyan
-      } else if (mode === 'high_speed_transit' || p2.speed_kmh > 70) {
+      } else if (mode === 'high_speed_transit') {
         color = '#a855f7'; // purple
       }
 
@@ -503,25 +500,18 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
   }, [sortedPings]);
 
   // Mode badge helper
-  const getModeBadge = (mode?: string, speed = 0) => {
-    if (mode === 'walking' || (speed > 0 && speed < 6.5)) {
+  const getModeBadge = (mode?: string) => {
+    if (mode === 'walking') {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
           <Footprints className="w-3 h-3" /> Walking
         </span>
       );
     }
-    if (mode === 'cycling' || (speed >= 6.5 && speed < 22)) {
+    if (mode === 'high_speed_transit') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-          <Bike className="w-3 h-3" /> Cycling
-        </span>
-      );
-    }
-    if (speed === 0) {
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-700 text-slate-300 border border-slate-600">
-          <MapPin className="w-3 h-3" /> Stationary
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-500/20 text-purple-400 border border-purple-500/30">
+          <Car className="w-3 h-3" /> Express Rail
         </span>
       );
     }
@@ -879,7 +869,7 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
                 <Clock className="w-3.5 h-3.5 text-indigo-400" />
                 <span>{new Date(activePing.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
               </div>
-              {getModeBadge(activePing.transport_mode, activePing.speed_kmh)}
+              {getModeBadge(activePing.transport_mode)}
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-[11px]">
