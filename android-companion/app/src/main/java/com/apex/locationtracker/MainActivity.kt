@@ -166,7 +166,7 @@ fun TrackerAppScreen(
                 onStartService()
             }
         } else {
-            Toast.makeText(context, "Precise location is required for speed and timeline tracking", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Precise location is required for timeline journey tracking", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -240,6 +240,40 @@ fun TrackerAppScreen(
                 }
             }
 
+            // Timeline Mode Information Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Timeline,
+                        contentDescription = null,
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Timeline Pin Tracking",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "Start Pin sent on departure. End Pin sent on arrival. Speed is computed strictly from ΔT between start and end.",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+
             // Active Journey Card (when journey is in progress)
             if (liveState.isJourneyActive) {
                 Card(
@@ -273,7 +307,7 @@ fun TrackerAppScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 14.sp
+                                fontSize = 15.sp
                             )
                         }
 
@@ -291,27 +325,17 @@ fun TrackerAppScreen(
                                     text = String.format(Locale.US, "%.2f km", liveState.journeyDistanceKm),
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White,
-                                    fontSize = 16.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Avg Speed", color = Color(0xFFA7F3D0), fontSize = 11.sp)
-                                Text(
-                                    text = String.format(Locale.US, "%.1f km/h", liveState.journeyAvgSpeedKmh),
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    fontSize = 16.sp,
+                                    fontSize = 18.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("Top Speed", color = Color(0xFFA7F3D0), fontSize = 11.sp)
+                                Text("Calculated Speed", color = Color(0xFFA7F3D0), fontSize = 11.sp)
                                 Text(
-                                    text = String.format(Locale.US, "%.1f km/h", liveState.journeyMaxSpeedKmh),
+                                    text = String.format(Locale.US, "%.1f km/h", liveState.journeyAvgSpeedKmh),
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    fontSize = 16.sp,
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 18.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
@@ -324,70 +348,18 @@ fun TrackerAppScreen(
                                 fontSize = 11.sp
                             )
                         }
+                        if (liveState.latitude != 0.0) {
+                            Text(
+                                text = "📍 Current: ${String.format(Locale.US, "%.4f", liveState.latitude)}°, ${String.format(Locale.US, "%.4f", liveState.longitude)}°",
+                                color = Color(0xFFA7F3D0),
+                                fontSize = 11.sp
+                            )
+                        }
                     }
                 }
             }
 
-            // Real-Time Speedometer & Metrics Card
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "LIVE VELOCITY",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF94A3B8)
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = String.format(Locale.US, "%.1f", liveState.speedKmh),
-                        fontSize = 54.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = if (liveState.isTracking) Color(0xFF10B981) else Color(0xFF64748B),
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Text(
-                        text = "KM / HOUR",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF64748B)
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Transport Mode Badge (with high-speed transit support)
-                    AssistChip(
-                        onClick = { },
-                        label = {
-                            Text(
-                                text = when (liveState.transportMode) {
-                                    "high_speed_transit" -> "🚄 High-Speed Transit"
-                                    "vehicle" -> "🚗 Vehicle Transit"
-                                    "cycling" -> "🚴 Cycling"
-                                    "walking" -> "🚶 Walking"
-                                    else -> "🛑 Stationary / Parked"
-                                },
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = Color(0xFF1E293B)
-                        )
-                    )
-                }
-            }
-
-            // Hardware Telemetry Details
+            // Hardware Telemetry & GPS Details
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
                 shape = RoundedCornerShape(16.dp)
@@ -406,16 +378,6 @@ fun TrackerAppScreen(
                             text = if (liveState.latitude != 0.0) "${String.format(Locale.US, "%.4f", liveState.latitude)}°, ${String.format(Locale.US, "%.4f", liveState.longitude)}°" else "Awaiting fix...",
                             color = Color.White,
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp
-                        )
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Velocity Sensor:", color = Color(0xFF94A3B8), fontSize = 13.sp)
-                        Text(
-                            text = liveState.speedSensingMethod,
-                            color = Color(0xFF38BDF8),
-                            fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp
                         )
                     }
@@ -523,7 +485,7 @@ fun TrackerAppScreen(
                     Icon(Icons.Default.Stop, contentDescription = null, tint = Color.White)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "🏁 END JOURNEY",
+                        text = "🏁 END JOURNEY (Drop End Pin)",
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = Color.White
@@ -559,9 +521,6 @@ fun TrackerAppScreen(
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 perms.add(Manifest.permission.POST_NOTIFICATIONS)
                             }
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                perms.add(Manifest.permission.ACTIVITY_RECOGNITION)
-                            }
                             locationPermissionsLauncher.launch(perms.toTypedArray())
                         } else {
                             onStartJourney()
@@ -576,39 +535,9 @@ fun TrackerAppScreen(
                     Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "🚀 START JOURNEY",
+                        text = "🚀 START JOURNEY (Drop Start Pin)",
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
-                        color = Color.White
-                    )
-                }
-
-                // Ambient Background Sensor Beacon Toggle
-                OutlinedButton(
-                    onClick = {
-                        if (liveState.isTracking) {
-                            onStopService()
-                        } else {
-                            if (!supabaseManager.isConfigured) {
-                                Toast.makeText(context, "⚠️ Please pair companion app first!", Toast.LENGTH_SHORT).show()
-                                showConfigModal = true
-                                return@OutlinedButton
-                            }
-                            onStartService()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(
-                        imageVector = if (liveState.isTracking) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = if (liveState.isTracking) Color(0xFFE11D48) else Color(0xFF38BDF8)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (liveState.isTracking) "Pause Background Sensor" else "Start Ambient Tracking",
-                        fontSize = 13.sp,
                         color = Color.White
                     )
                 }

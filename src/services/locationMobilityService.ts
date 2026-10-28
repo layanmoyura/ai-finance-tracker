@@ -950,50 +950,48 @@ export function computeJourneyTelemetry(pings: DeviceLocationPing[]): JourneyTel
     (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
   );
 
-  // Identify Start Pin, End Pin, and In-Travel Pins
+  // Identify Start Pin, End Pin, and any intermediate pins (if any)
   const startPing = sorted.find((p) => p.pin_type === 'start') || sorted[0];
   const endPing =
     [...sorted].reverse().find((p) => p.pin_type === 'end') || sorted[sorted.length - 1];
 
   const inTravelPings = sorted.filter((p) => p !== startPing && p !== endPing);
 
-  // Calculate total distance & peak velocity
-  let totalDistanceKm = 0;
-  let maxSpeedKmh = 0;
-  const modeCounts: Record<string, number> = {};
+  // Speed is calculated strictly based on start point and end point times
+  // Distance is geodesic straight-line distance between Start Pin and End Pin
+  const totalDistanceKm = calculateDistanceKm(
+    startPing.latitude,
+    startPing.longitude,
+    endPing.latitude,
+    endPing.longitude
+  );
 
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const p1 = sorted[i];
-    const p2 = sorted[i + 1];
-    totalDistanceKm += calculateDistanceKm(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
-  }
-
-  for (const p of sorted) {
-    if (p.speed_kmh > maxSpeedKmh) maxSpeedKmh = p.speed_kmh;
-    const mode = (p.transport_mode || 'vehicle') as string;
-    modeCounts[mode] = (modeCounts[mode] || 0) + 1;
-  }
-
-  // Determine dominant transport mode
-  let primaryTransportMode: TransportMode = 'vehicle';
-  let highestModeCount = 0;
-  for (const [m, count] of Object.entries(modeCounts)) {
-    if (m !== 'stationary' && count > highestModeCount) {
-      highestModeCount = count;
-      primaryTransportMode = m as TransportMode;
-    }
-  }
-
-  // Travel time calculation (monotonic delta in seconds)
+  // Travel time calculation (monotonic delta in seconds between start and end)
   const startMs = new Date(startPing.recorded_at).getTime();
   const endMs = new Date(endPing.recorded_at).getTime();
   const travelTimeSeconds = Math.max(1, Math.round((endMs - startMs) / 1000));
 
-  // Average speed calculation (km / h)
+  // Average speed calculation (km / h) based on start and end point times:
+  // Speed = Distance / Delta_T
   const hours = travelTimeSeconds / 3600;
   const avgSpeedKmh = hours > 0 ? Number((totalDistanceKm / hours).toFixed(1)) : 0;
+  const maxSpeedKmh = avgSpeedKmh;
 
-  // Cost estimation: zero for active pedestrian/cyclist, $0.18/km default with $2.50 base
+  // Derive mode from calculated speed
+  let primaryTransportMode: TransportMode = 'vehicle';
+  if (avgSpeedKmh < 1.5) {
+    primaryTransportMode = 'stationary';
+  } else if (avgSpeedKmh < 12) {
+    primaryTransportMode = 'walking';
+  } else if (avgSpeedKmh < 28) {
+    primaryTransportMode = 'cycling';
+  } else if (avgSpeedKmh >= 80) {
+    primaryTransportMode = 'high_speed_transit';
+  } else {
+    primaryTransportMode = 'vehicle';
+  }
+
+  // Cost estimation: zero for pedestrian/cyclist, $0.18/km default with $2.50 base
   const ratePerKm = primaryTransportMode === 'walking' || primaryTransportMode === 'cycling' ? 0 : 0.18;
   const estimatedCost = Number(
     Math.max(

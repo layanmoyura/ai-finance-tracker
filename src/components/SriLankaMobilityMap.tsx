@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import type { DeviceLocationPing } from '../types';
 import {
   computeJourneyTelemetry,
+  calculateDistanceKm,
   type JourneyTelemetryMetrics,
 } from '../services/locationMobilityService';
 import {
@@ -299,12 +300,11 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
       }).addTo(routeGroup);
     }
 
-    // 1. Identify Start, In-Travel, and End Pins
+    // 1. Identify Start and End Pins
     const startPing = sortedPings.find((p) => p.pin_type === 'start') || sortedPings[0];
     const endPing =
       [...sortedPings].reverse().find((p) => p.pin_type === 'end') ||
       sortedPings[sortedPings.length - 1];
-    const inTravelPings = sortedPings.filter((p) => p !== startPing && p !== endPing);
 
     // 2. Add Start Point Marker (Emerald Pulsing Beacon)
     const startIcon = L.divIcon({
@@ -330,43 +330,7 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
         </div>`
       );
 
-    // 3. Add In-Travel Pins (Milestone beads sampled along the trajectory)
-    const step = Math.max(1, Math.floor(inTravelPings.length / 8));
-    const sampledInTravel = inTravelPings.filter((_, idx) => idx % step === 0);
-    sampledInTravel.forEach((p, idx) => {
-      const modeEmoji =
-        p.transport_mode === 'walking'
-          ? '🚶'
-          : p.transport_mode === 'cycling'
-          ? '🚴'
-          : p.transport_mode === 'high_speed_transit'
-          ? '🚄'
-          : '🚗';
-      const inTravelIcon = L.divIcon({
-        className: 'in-travel-marker-icon',
-        html: `
-          <div class="relative flex items-center justify-center cursor-pointer">
-            <span class="inline-flex h-5 w-5 rounded-full bg-sky-500 border-2 border-slate-900 shadow-md items-center justify-center text-[9px] font-bold text-white">${modeEmoji}</span>
-          </div>
-        `,
-        iconSize: [20, 20],
-        iconAnchor: [10, 10],
-      });
-
-      L.marker([p.latitude, p.longitude], { icon: inTravelIcon })
-        .addTo(routeGroup)
-        .bindPopup(
-          `<div class="p-1.5 text-slate-900 font-sans text-xs">
-            <b class="text-sky-700 font-bold">🟡 In-Travel Waypoint #${idx + 1}</b><br/>
-            Time: ${new Date(p.recorded_at).toLocaleTimeString()}<br/>
-            Speed: <b>${p.speed_kmh.toFixed(1)} km/h</b><br/>
-            Mode: ${p.transport_mode || 'vehicle'}<br/>
-            Coords: ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}
-          </div>`
-        );
-    });
-
-    // 4. Add End Point Marker (Crimson / Checkered Flag)
+    // 3. Add End Point Marker (Crimson / Checkered Flag)
     const endIcon = L.divIcon({
       className: 'end-marker-icon',
       html: `
@@ -378,13 +342,17 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
       iconAnchor: [13, 13],
     });
 
-    const travelDurationMins = Math.max(
-      1,
-      Math.round(
-        (new Date(endPing.recorded_at).getTime() - new Date(startPing.recorded_at).getTime()) /
-          60000
-      )
+    const startMs = new Date(startPing.recorded_at).getTime();
+    const endMs = new Date(endPing.recorded_at).getTime();
+    const travelDurationSec = Math.max(1, Math.round((endMs - startMs) / 1000));
+    const travelDurationMins = Math.max(1, Math.round(travelDurationSec / 60));
+    const tripDistKm = calculateDistanceKm(
+      startPing.latitude,
+      startPing.longitude,
+      endPing.latitude,
+      endPing.longitude
     );
+    const calculatedSpeed = travelDurationSec > 0 ? (tripDistKm / (travelDurationSec / 3600)).toFixed(1) : '0.0';
 
     L.marker([endPing.latitude, endPing.longitude], { icon: endIcon })
       .addTo(routeGroup)
@@ -392,38 +360,12 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
         `<div class="p-1.5 text-slate-900 font-sans text-xs">
           <b class="text-rose-700 text-sm">🏁 Arrival Point (End Pin)</b><br/>
           Time: <b>${new Date(endPing.recorded_at).toLocaleTimeString()}</b><br/>
-          Trip Duration: <b>~${travelDurationMins} mins</b><br/>
+          Trip Duration: <b>~${travelDurationMins} mins (${travelDurationSec}s)</b><br/>
+          Calculated Speed: <b>${calculatedSpeed} km/h</b><br/>
+          Distance: <b>${tripDistKm.toFixed(2)} km</b><br/>
           Lat: ${endPing.latitude.toFixed(4)}, Lng: ${endPing.longitude.toFixed(4)}
         </div>`
       );
-
-    // Dwell stops detection and markers
-    let dwellCandidate = sortedPings[0];
-    for (let i = 1; i < sortedPings.length; i++) {
-      const p = sortedPings[i];
-      const deltaMs = new Date(p.recorded_at).getTime() - new Date(dwellCandidate.recorded_at).getTime();
-      const dist = Math.hypot(p.latitude - dwellCandidate.latitude, p.longitude - dwellCandidate.longitude);
-
-      if (dist < 0.0008 && deltaMs >= 5 * 60 * 1000) {
-        const dwellIcon = L.divIcon({
-          className: 'dwell-stop-icon',
-          html: '<div class="h-3 w-3 rounded-full bg-amber-400 border border-slate-900 shadow ring-2 ring-amber-500/50"></div>',
-          iconSize: [12, 12],
-          iconAnchor: [6, 6],
-        });
-        L.marker([p.latitude, p.longitude], { icon: dwellIcon })
-          .addTo(routeGroup)
-          .bindPopup(
-            `<div class="p-1 text-slate-900 font-sans text-xs">
-              <b>🛑 Dwell Stop (~${Math.round(deltaMs / 60000)} mins)</b><br/>
-              Time: ${new Date(dwellCandidate.recorded_at).toLocaleTimeString()} - ${new Date(p.recorded_at).toLocaleTimeString()}
-            </div>`
-          );
-        dwellCandidate = p;
-      } else if (dist >= 0.0008) {
-        dwellCandidate = p;
-      }
-    }
 
     // Dynamic Live Scrubber Radar Marker
     const radarIcon = L.divIcon({
