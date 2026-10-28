@@ -10,10 +10,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.location.Location
 import android.os.BatteryManager
 import android.os.Build
@@ -46,7 +42,6 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
-import kotlin.math.sqrt
 
 data class CompletedJourneySummary(
     val journeyId: String,
@@ -71,7 +66,7 @@ data class LiveTrackerState(
     val speedKmh: Float = 0.0f,
     val accuracyMeters: Float = 0.0f,
     val transportMode: String = "stationary",
-    val speedSensingMethod: String = "Awaiting Fix",
+    val speedSensingMethod: String = "Calculated (Distance / Time)",
     val batteryLevel: Float = 0.0f,
     val isCharging: Boolean = false,
     val lastPingTimestamp: String = "",
@@ -92,34 +87,16 @@ data class LiveTrackerState(
     val completedJourney: CompletedJourneySummary? = null
 )
 
-class LocationTrackingService : Service(), SensorEventListener {
+class LocationTrackingService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
     private lateinit var supabaseManager: SupabaseManager
     private lateinit var notificationManager: NotificationManager
-    private lateinit var sensorManager: SensorManager
-
-    // Kinetic Hardware Sensors
-    private var linearAccelSensor: Sensor? = null
-    private var accelerometerSensor: Sensor? = null
-    private var stepDetectorSensor: Sensor? = null
-    private var isUsingFallbackAccelerometer: Boolean = false
-
-    // Kinetic Acceleration & Cadence State
-    private var kineticEnergy: Float = 0.0f
-    private val gravityFilter = FloatArray(3)
-    private val stepTimestamps = mutableListOf<Long>()
-    private var lastKineticEventTimestampMs: Long = 0L
 
     private var lastRecordedLocation: Location? = null
-    private var lastDispatchedLocation: Location? = null
-    private var lastDispatchedTimestampMs: Long = 0L
-    private var lastReportedMode: String = "stationary"
-    private var smoothedSpeedKmh: Float = 0.0f
     private var pingCounter: Int = 0
-    private var consecutiveDispatches: Int = 0
 
     // Active Journey Session Variables
     private var isJourneyActive: Boolean = false
@@ -128,7 +105,7 @@ class LocationTrackingService : Service(), SensorEventListener {
     private var journeyStartIsoTime: String = ""
     private var journeyStartLocation: Location? = null
     private var journeyDistanceMeters: Float = 0.0f
-    private var journeyMaxSpeedKmh: Float = 0.0f
+    private var lastDispatchedPingTimestampMs: Long = 0L
     private var journeyTickerJob: Job? = null
 
     companion object {
@@ -151,7 +128,6 @@ class LocationTrackingService : Service(), SensorEventListener {
         supabaseManager = SupabaseManager.getInstance(this)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
         createNotificationChannel()
         setupLocationCallback()
@@ -188,7 +164,7 @@ class LocationTrackingService : Service(), SensorEventListener {
     }
 
     private fun startTrackingInForeground() {
-        val notification = buildNotification("Initializing kinetic sensor tracking...")
+        val notification = buildNotification("Timeline location tracking active...")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
@@ -199,91 +175,20 @@ class LocationTrackingService : Service(), SensorEventListener {
             startForeground(NOTIFICATION_ID, notification)
         }
 
-        registerKineticSensors()
         requestLocationUpdates()
 
         _liveState.value = _liveState.value.copy(
             isTracking = true,
-            statusMessage = "Kinetic sensor tracking active (Foreground Service)"
+            statusMessage = "Timeline location tracking active"
         )
-    }
-
-    private fun registerKineticSensors() {
-        linearAccelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
-        if (linearAccelSensor != null) {
-            sensorManager.registerListener(this, linearAccelSensor, SensorManager.SENSOR_DELAY_UI)
-            isUsingFallbackAccelerometer = false
-            Log.i(TAG, "Registered hardware TYPE_LINEAR_ACCELERATION sensor")
-        } else {
-            accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-            if (accelerometerSensor != null) {
-                sensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_UI)
-                isUsingFallbackAccelerometer = true
-                Log.i(TAG, "Registered fallback TYPE_ACCELEROMETER sensor with gravity subtraction")
-            }
-        }
-
-        stepDetectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
-        if (stepDetectorSensor != null) {
-            sensorManager.registerListener(this, stepDetectorSensor, SensorManager.SENSOR_DELAY_UI)
-            Log.i(TAG, "Registered hardware TYPE_STEP_DETECTOR sensor")
-        }
-    }
-
-    private fun unregisterKineticSensors() {
-        try {
-            sensorManager.unregisterListener(this)
-        } catch (e: Exception) {
-            Log.w(TAG, "Error unregistering kinetic sensors: ${e.message}")
-        }
-    }
-
-    override fun onSensorChanged(event: SensorEvent) {
-        val now = SystemClock.elapsedRealtime()
-        lastKineticEventTimestampMs = now
-
-        when (event.sensor.type) {
-            Sensor.TYPE_STEP_DETECTOR -> {
-                synchronized(stepTimestamps) {
-                    stepTimestamps.add(now)
-                    stepTimestamps.removeAll { now - it > 5000L }
-                }
-            }
-            Sensor.TYPE_LINEAR_ACCELERATION -> {
-                val ax = event.values[0]
-                val ay = event.values[1]
-                val az = event.values[2]
-                val mag = sqrt(ax * ax + ay * ay + az * az)
-                kineticEnergy = 0.85f * kineticEnergy + 0.15f * mag
-            }
-            Sensor.TYPE_ACCELEROMETER -> {
-                if (isUsingFallbackAccelerometer) {
-                    gravityFilter[0] = 0.8f * gravityFilter[0] + 0.2f * event.values[0]
-                    gravityFilter[1] = 0.8f * gravityFilter[1] + 0.2f * event.values[1]
-                    gravityFilter[2] = 0.8f * gravityFilter[2] + 0.2f * event.values[2]
-
-                    val ax = event.values[0] - gravityFilter[0]
-                    val ay = event.values[1] - gravityFilter[1]
-                    val az = event.values[2] - gravityFilter[2]
-                    val mag = sqrt(ax * ax + ay * ay + az * az)
-                    kineticEnergy = 0.85f * kineticEnergy + 0.15f * mag
-                }
-            }
-        }
-    }
-
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // No-op for inertial kinetic sensors
     }
 
     @SuppressLint("MissingPermission")
     private fun requestLocationUpdates() {
         fusedLocationClient.removeLocationUpdates(locationCallback)
 
-        // Continuous high-accuracy location sensing:
-        // Update interval 2.5s, fastest 1.2s, displacement 0.0m for immediate responsiveness
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2500L)
-            .setMinUpdateIntervalMillis(1200L)
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000L)
+            .setMinUpdateIntervalMillis(1500L)
             .setMinUpdateDistanceMeters(0.0f)
             .setWaitForAccurateLocation(false)
             .build()
@@ -294,7 +199,6 @@ class LocationTrackingService : Service(), SensorEventListener {
             Looper.getMainLooper()
         )
 
-        // Immediately query last known location to broadcast instantaneous initial fix
         fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
             if (loc != null) {
                 processLocationUpdate(loc)
@@ -311,217 +215,99 @@ class LocationTrackingService : Service(), SensorEventListener {
         }
     }
 
-    private data class SpeedMeasurement(
-        val speedKmh: Float,
-        val method: String
-    )
-
     /**
-     * Pure Kinetic Velocity Engine:
-     * - GPS Doppler speed is completely removed.
-     * - Velocity and movement detection rely exclusively on device kinetic sensors.
-     * - Rejects GPS multipath jitter and wander when physical kinetic energy indicates the phone is at rest.
-     * - Computes real-time walking speed from kinetic step cadence.
-     * - Computes transit speed from kinetic-validated kinematic displacement and kinetic acceleration profile.
+     * Process location update from GPS provider:
+     * - Dispatches intermediate route pings every 10 seconds during an active journey (pin_type = "in_travel").
+     * - Speed is calculated strictly from route distance and elapsed time (no kinetic speed sensors).
      */
-    private fun calculateSpeed(location: Location): SpeedMeasurement {
-        val now = SystemClock.elapsedRealtime()
-
-        // 1. Evaluate Step Sensor Cadence
-        val recentSteps: Int
-        val stepCadence: Float
-        synchronized(stepTimestamps) {
-            stepTimestamps.removeAll { now - it > 5000L }
-            recentSteps = stepTimestamps.size
-            stepCadence = if (recentSteps >= 2) {
-                val timeSpanSec = (stepTimestamps.last() - stepTimestamps.first()) / 1000.0f
-                if (timeSpanSec > 0.4f) (recentSteps - 1) / timeSpanSec else 0.0f
-            } else if (recentSteps == 1) {
-                1.4f
-            } else {
-                0.0f
-            }
-        }
-
-        val lastStepMs = synchronized(stepTimestamps) { stepTimestamps.lastOrNull() ?: 0L }
-        val isStepActive = recentSteps > 0 && (now - lastStepMs) < 2500L
-        val isStationaryKinetic = kineticEnergy < 0.22f && !isStepActive
-
-        // 2. Device Kinetic Stationary Lock
-        // When device kinetic sensors indicate zero physical acceleration (< 0.22 m/s²),
-        // the phone is physically at rest. Clamps velocity to strictly 0.0 km/h.
-        if (isStationaryKinetic) {
-            smoothedSpeedKmh = 0.0f
-            return SpeedMeasurement(0.0f, "Kinetic Stationary Lock")
-        }
-
-        // 3. Pedestrian Walking Velocity via Biometric Kinetic Cadence
-        // Speed = cadence (steps/sec) * stride (0.74m) * 3.6 km/h
-        if (isStepActive && stepCadence >= 0.4f) {
-            val biometricWalkingSpeedKmh = (stepCadence * 0.74f * 3.6f).coerceIn(2.5f, 7.5f)
-            smoothedSpeedKmh = if (smoothedSpeedKmh < 1.0f) {
-                biometricWalkingSpeedKmh
-            } else {
-                0.75f * biometricWalkingSpeedKmh + 0.25f * smoothedSpeedKmh
-            }
-            return SpeedMeasurement(smoothedSpeedKmh, "Kinetic Step Cadence (Walking)")
-        }
-
-        // 4. Transit & Vehicular Kinetic Sensing (Vehicle / High-Speed Transit)
-        // Kinetic acceleration confirmed active (> 0.22 m/s² from motor/road vibration).
-        // Derive velocity from kinematic displacement over monotonic elapsed time.
-        val prev = lastRecordedLocation
-        if (prev != null) {
-            val deltaMeters = prev.distanceTo(location)
-            val deltaTimeSec = (location.elapsedRealtimeNanos - prev.elapsedRealtimeNanos) / 1_000_000_000.0
-
-            if (deltaTimeSec in 0.5..60.0 && deltaMeters >= 1.5f) {
-                val derivedSpeedKmh = ((deltaMeters / deltaTimeSec) * 3.6).toFloat()
-                if (derivedSpeedKmh in 1.5f..260.0f) {
-                    smoothedSpeedKmh = if (smoothedSpeedKmh < 1.0f) {
-                        derivedSpeedKmh
-                    } else {
-                        0.70f * derivedSpeedKmh + 0.30f * smoothedSpeedKmh
-                    }
-                    val method = if (smoothedSpeedKmh >= 80.0f) {
-                        "Kinetic High-Speed Transit"
-                    } else {
-                        "Kinetic Transit Sensor (Vehicle)"
-                    }
-                    return SpeedMeasurement(smoothedSpeedKmh, method)
-                }
-            }
-        }
-
-        // 5. Kinetic Transition / Dynamic Fallback
-        val finalSpeed = if (smoothedSpeedKmh >= 1.2f) smoothedSpeedKmh else 0.0f
-        val method = if (finalSpeed > 0.0f) "Kinetic Motion Sensor" else "Kinetic Stationary Lock"
-        return SpeedMeasurement(finalSpeed, method)
-    }
-
     private fun processLocationUpdate(location: Location) {
-        val (speedKmh, sensingMethod) = calculateSpeed(location)
-        val mode = classifyTransportMode(speedKmh)
-        val now = System.currentTimeMillis()
-
-        // Accumulate active journey distance
-        if (isJourneyActive && lastRecordedLocation != null) {
-            val deltaMeters = lastRecordedLocation!!.distanceTo(location)
-            if (deltaMeters in 0.5f..500.0f) {
-                journeyDistanceMeters += deltaMeters
-                if (speedKmh > journeyMaxSpeedKmh) {
-                    journeyMaxSpeedKmh = speedKmh
-                }
-            }
-        }
-
-        // Read battery information
+        val prevLoc = lastRecordedLocation
+        lastRecordedLocation = location
+        val now = SystemClock.elapsedRealtime()
         val (batteryLevel, isCharging) = getBatteryInfo()
-
         val isoTimestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }.format(Date(location.time))
 
-        // IMMEDIATELY update local state flow so phone UI is zero-latency
-        _liveState.value = _liveState.value.copy(
-            latitude = location.latitude,
-            longitude = location.longitude,
-            speedKmh = speedKmh,
-            accuracyMeters = location.accuracy,
-            transportMode = mode,
-            speedSensingMethod = sensingMethod,
-            batteryLevel = batteryLevel,
-            isCharging = isCharging,
-            lastPingTimestamp = isoTimestamp,
-            statusMessage = "Last fix: ${String.format(Locale.US, "%.1f", speedKmh)} km/h • $mode ($sensingMethod)"
-        )
+        if (isJourneyActive) {
+            // Accumulate route distance along sequential GPS updates
+            if (prevLoc != null) {
+                val deltaMeters = prevLoc.distanceTo(location)
+                if (deltaMeters in 1.0f..600.0f) {
+                    journeyDistanceMeters += deltaMeters
+                }
+            }
 
-        // Evaluate whether to dispatch a telemetry ping to Supabase
-        val prevDispatched = lastDispatchedLocation
-        val modeChanged = mode != lastReportedMode
-        val distanceMovedSinceDispatch = prevDispatched?.distanceTo(location) ?: 999.0f
-        val timeSinceLastDispatch = now - lastDispatchedTimestampMs
-        val isStationary = mode == "stationary"
+            val distKm = journeyDistanceMeters / 1000.0f
+            val elapsedSec = maxOf(1L, (now - journeyStartTimeMs) / 1000L)
+            val hours = elapsedSec / 3600.0f
+            val calculatedSpeedKmh = if (hours > 0) distKm / hours else 0.0f
+            val mode = classifyTransportMode(calculatedSpeedKmh)
 
-        val shouldDispatch = when {
-            prevDispatched == null -> true // First fix dispatched immediately
-            consecutiveDispatches < 5 && timeSinceLastDispatch >= 2000L -> true // Quick initial synchronization burst
-            modeChanged -> true // Immediate dispatch on stop or move transition
-            !isStationary && (timeSinceLastDispatch >= 2500L || distanceMovedSinceDispatch >= 4.0f) -> true
-            isStationary && timeSinceLastDispatch >= 10000L -> true // Periodic 10s heartbeat (down from 60s)
-            else -> false
-        }
-
-        lastRecordedLocation = location
-
-        if (shouldDispatch) {
-            lastDispatchedLocation = location
-            lastDispatchedTimestampMs = now
-            lastReportedMode = mode
-            consecutiveDispatches++
-
-            val currentPinType = if (isJourneyActive) "in_travel" else "ambient"
-            val ping = LocationPingEntity(
-                userId = supabaseManager.userId,
-                deviceId = supabaseManager.deviceId,
-                deviceName = supabaseManager.deviceName,
+            _liveState.value = _liveState.value.copy(
                 latitude = location.latitude,
                 longitude = location.longitude,
-                altitude = if (location.hasAltitude()) location.altitude else null,
-                accuracyMeters = if (location.hasAccuracy()) location.accuracy else null,
-                speedKmh = speedKmh,
-                heading = if (location.hasBearing()) location.bearing else null,
+                speedKmh = calculatedSpeedKmh,
+                accuracyMeters = location.accuracy,
+                transportMode = mode,
                 batteryLevel = batteryLevel,
                 isCharging = isCharging,
-                transportMode = mode,
-                recordedAt = isoTimestamp,
-                journeyId = if (isJourneyActive) activeJourneyId else null,
-                pinType = currentPinType
+                lastPingTimestamp = isoTimestamp,
+                journeyDistanceKm = distKm,
+                journeyAvgSpeedKmh = calculatedSpeedKmh,
+                journeyDurationSeconds = elapsedSec,
+                statusMessage = "Tracking Route: ${String.format(Locale.US, "%.2f", distKm)} km • ${String.format(Locale.US, "%.1f", calculatedSpeedKmh)} km/h"
             )
 
-            serviceScope.launch {
-                val result = supabaseManager.dispatchPing(ping)
-                val currentOffline = supabaseManager.getOfflineCount()
+            val summaryText = "${String.format(Locale.US, "%.2f", distKm)} km • ${String.format(Locale.US, "%.1f", calculatedSpeedKmh)} km/h ($mode)"
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(summaryText))
 
-                val statusText: String
-                if (result.isSuccess) {
-                    pingCounter++
-                    statusText = if (currentOffline > 0) {
-                        "HTTP ${result.getOrNull()} (Flushing: $currentOffline left)"
-                    } else {
-                        "HTTP ${result.getOrNull()}"
-                    }
-                } else {
-                    val ex = result.exceptionOrNull()
-                    val msg = ex?.message ?: "Error"
-                    val detail = msg.substringAfter(": ").trim().take(35)
-                    statusText = when {
-                        msg.contains("Not Configured", ignoreCase = true) -> "Not Paired"
-                        msg.contains("HTTP 401", ignoreCase = true) -> if (detail.isNotBlank() && !detail.startsWith("HTTP")) "HTTP 401 ($detail)" else "HTTP 401 (Auth Failed)"
-                        msg.contains("HTTP 403", ignoreCase = true) -> if (detail.isNotBlank() && !detail.startsWith("HTTP")) "HTTP 403 ($detail)" else "HTTP 403 (Perm Denied)"
-                        msg.contains("HTTP 400", ignoreCase = true) -> if (detail.isNotBlank() && !detail.startsWith("HTTP")) "HTTP 400 ($detail)" else "HTTP 400 (Bad Request)"
-                        msg.contains("HTTP 409", ignoreCase = true) -> "HTTP 409 ($detail)"
-                        else -> "Offline Cached ($currentOffline queued)"
-                    }
-                }
-
-                _liveState.value = _liveState.value.copy(
-                    totalPingsTransmitted = pingCounter,
-                    pendingOfflineCount = currentOffline,
-                    lastHttpStatus = statusText
+            // Dispatch 10s intermediate waypoint ping to track the route
+            val timeSinceLastDispatch = now - lastDispatchedPingTimestampMs
+            if (timeSinceLastDispatch >= 10000L) {
+                lastDispatchedPingTimestampMs = now
+                val journeyId = activeJourneyId
+                val inTravelPing = LocationPingEntity(
+                    userId = supabaseManager.userId,
+                    deviceId = supabaseManager.deviceId,
+                    deviceName = supabaseManager.deviceName,
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    altitude = if (location.hasAltitude()) location.altitude else null,
+                    accuracyMeters = if (location.hasAccuracy()) location.accuracy else null,
+                    speedKmh = calculatedSpeedKmh,
+                    heading = if (location.hasBearing()) location.bearing else null,
+                    batteryLevel = batteryLevel,
+                    isCharging = isCharging,
+                    transportMode = mode,
+                    recordedAt = isoTimestamp,
+                    journeyId = journeyId,
+                    pinType = "in_travel"
                 )
 
-                val summaryText = "${String.format(Locale.US, "%.0f", speedKmh)} km/h ($mode) • $statusText • $pingCounter sent"
-                notificationManager.notify(NOTIFICATION_ID, buildNotification(summaryText))
+                serviceScope.launch {
+                    val result = supabaseManager.dispatchPing(inTravelPing)
+                    if (result.isSuccess) {
+                        pingCounter++
+                        _liveState.value = _liveState.value.copy(
+                            totalPingsTransmitted = pingCounter,
+                            lastHttpStatus = "HTTP ${result.getOrNull()} (10s Waypoint)"
+                        )
+                    }
+                }
             }
         } else {
-            // Update ongoing notification even if database dispatch was throttled
-            serviceScope.launch {
-                val currentOffline = supabaseManager.getOfflineCount()
-                _liveState.value = _liveState.value.copy(pendingOfflineCount = currentOffline)
-                val summaryText = "${String.format(Locale.US, "%.0f", speedKmh)} km/h ($mode) • ${_liveState.value.lastHttpStatus} • $pingCounter sent"
-                notificationManager.notify(NOTIFICATION_ID, buildNotification(summaryText))
-            }
+            _liveState.value = _liveState.value.copy(
+                latitude = location.latitude,
+                longitude = location.longitude,
+                speedKmh = 0.0f,
+                accuracyMeters = location.accuracy,
+                transportMode = "stationary",
+                batteryLevel = batteryLevel,
+                isCharging = isCharging,
+                lastPingTimestamp = isoTimestamp,
+                statusMessage = "Ready • Lat: ${String.format(Locale.US, "%.4f", location.latitude)}, Lng: ${String.format(Locale.US, "%.4f", location.longitude)}"
+            )
         }
     }
 
@@ -553,27 +339,18 @@ class LocationTrackingService : Service(), SensorEventListener {
         if (isJourneyActive) {
             endJourneySession()
         }
-        unregisterKineticSensors()
         fusedLocationClient.removeLocationUpdates(locationCallback)
-        smoothedSpeedKmh = 0.0f
-        kineticEnergy = 0.0f
-        synchronized(stepTimestamps) {
-            stepTimestamps.clear()
-        }
         lastRecordedLocation = null
-        lastDispatchedLocation = null
-        lastReportedMode = "stationary"
-        consecutiveDispatches = 0
 
         _liveState.value = _liveState.value.copy(
             isTracking = false,
             speedKmh = 0.0f,
             transportMode = "stationary",
-            speedSensingMethod = "Stopped",
             statusMessage = "Tracking paused"
         )
     }
 
+    @SuppressLint("MissingPermission")
     private fun startJourneySession() {
         val journeyId = UUID.randomUUID().toString()
         val nowMs = SystemClock.elapsedRealtime()
@@ -586,7 +363,7 @@ class LocationTrackingService : Service(), SensorEventListener {
         journeyStartTimeMs = nowMs
         journeyStartIsoTime = isoTimestamp
         journeyDistanceMeters = 0.0f
-        journeyMaxSpeedKmh = 0.0f
+        lastDispatchedPingTimestampMs = nowMs
 
         val loc = lastRecordedLocation
         journeyStartLocation = loc
@@ -601,10 +378,10 @@ class LocationTrackingService : Service(), SensorEventListener {
                 startTime = isoTimestamp,
                 startLat = startLat,
                 startLng = startLng,
-                primaryMode = lastReportedMode
+                primaryMode = "vehicle"
             )
 
-            // Immediately send Start Pin if location is available
+            // Send Departure Start Pin
             if (loc != null) {
                 val (batLevel, isChg) = getBatteryInfo()
                 val startPing = LocationPingEntity(
@@ -615,16 +392,23 @@ class LocationTrackingService : Service(), SensorEventListener {
                     longitude = loc.longitude,
                     altitude = if (loc.hasAltitude()) loc.altitude else null,
                     accuracyMeters = if (loc.hasAccuracy()) loc.accuracy else null,
-                    speedKmh = smoothedSpeedKmh,
+                    speedKmh = 0.0f,
                     heading = if (loc.hasBearing()) loc.bearing else null,
                     batteryLevel = batLevel,
                     isCharging = isChg,
-                    transportMode = lastReportedMode,
+                    transportMode = "stationary",
                     recordedAt = isoTimestamp,
                     journeyId = journeyId,
                     pinType = "start"
                 )
-                supabaseManager.dispatchPing(startPing)
+                val result = supabaseManager.dispatchPing(startPing)
+                if (result.isSuccess) {
+                    pingCounter++
+                    _liveState.value = _liveState.value.copy(
+                        totalPingsTransmitted = pingCounter,
+                        lastHttpStatus = "HTTP ${result.getOrNull()} (Start Pin)"
+                    )
+                }
             }
         }
 
@@ -633,22 +417,24 @@ class LocationTrackingService : Service(), SensorEventListener {
             while (isJourneyActive) {
                 val elapsedSec = maxOf(0L, (SystemClock.elapsedRealtime() - journeyStartTimeMs) / 1000L)
                 val distKm = journeyDistanceMeters / 1000.0f
-                val avgSpeed = if (elapsedSec > 0) (distKm / (elapsedSec / 3600.0f)) else 0.0f
+                val hours = elapsedSec / 3600.0f
+                val calcSpeed = if (hours > 0) distKm / hours else 0.0f
+
                 _liveState.value = _liveState.value.copy(
                     isJourneyActive = true,
                     activeJourneyId = journeyId,
                     journeyStartTimeMs = journeyStartTimeMs,
                     journeyDurationSeconds = elapsedSec,
                     journeyDistanceKm = distKm,
-                    journeyAvgSpeedKmh = avgSpeed,
+                    journeyAvgSpeedKmh = calcSpeed,
                     journeyStartLat = startLat,
                     journeyStartLng = startLng,
-                    journeyMaxSpeedKmh = journeyMaxSpeedKmh
+                    journeyMaxSpeedKmh = calcSpeed
                 )
                 delay(1000L)
             }
         }
-        Log.i(TAG, "Started journey session $journeyId")
+        Log.i(TAG, "Started journey session $journeyId with Start Pin")
     }
 
     private fun endJourneySession() {
@@ -656,18 +442,28 @@ class LocationTrackingService : Service(), SensorEventListener {
         val journeyId = activeJourneyId ?: return
         val endMs = SystemClock.elapsedRealtime()
         val durationSec = maxOf(1L, (endMs - journeyStartTimeMs) / 1000L)
-        val distKm = journeyDistanceMeters / 1000.0f
-        val avgSpeed = if (durationSec > 0) (distKm / (durationSec / 3600.0f)) else 0.0f
-        val maxSpeed = journeyMaxSpeedKmh
-        val primaryMode = lastReportedMode
-        val estimatedCost = calculateEstimatedCost(distKm, primaryMode)
-
-        val endLoc = lastRecordedLocation
-        val endLat = endLoc?.latitude ?: 0.0
-        val endLng = endLoc?.longitude ?: 0.0
         val isoEndTime = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }.format(Date())
+
+        val startLoc = journeyStartLocation
+        val endLoc = lastRecordedLocation
+        val endLat = endLoc?.latitude ?: 0.0
+        val endLng = endLoc?.longitude ?: 0.0
+        val startLat = startLoc?.latitude ?: 0.0
+        val startLng = startLoc?.longitude ?: 0.0
+
+        // Distance: use accumulated route distance, or straight-line distance if stationary/single hop
+        val straightDistMeters = if (startLoc != null && endLoc != null) startLoc.distanceTo(endLoc) else 0.0f
+        val distMeters = if (journeyDistanceMeters >= straightDistMeters * 0.8f) journeyDistanceMeters else straightDistMeters
+        val distKm = distMeters / 1000.0f
+
+        // Speed calculated strictly based on start point and end point times:
+        // Speed = Total Route Distance / Delta_T
+        val hours = durationSec / 3600.0f
+        val calculatedSpeedKmh = if (hours > 0) distKm / hours else 0.0f
+        val primaryMode = classifyTransportMode(calculatedSpeedKmh)
+        val estimatedCost = calculateEstimatedCost(distKm, primaryMode)
 
         isJourneyActive = false
         journeyTickerJob?.cancel()
@@ -678,14 +474,14 @@ class LocationTrackingService : Service(), SensorEventListener {
             journeyId = journeyId,
             startTime = journeyStartIsoTime,
             endTime = isoEndTime,
-            startLat = journeyStartLocation?.latitude ?: 0.0,
-            startLng = journeyStartLocation?.longitude ?: 0.0,
+            startLat = startLat,
+            startLng = startLng,
             endLat = endLat,
             endLng = endLng,
             durationSeconds = durationSec,
             distanceKm = distKm,
-            avgSpeedKmh = avgSpeed,
-            maxSpeedKmh = maxSpeed,
+            avgSpeedKmh = calculatedSpeedKmh,
+            maxSpeedKmh = calculatedSpeedKmh,
             estimatedCost = estimatedCost,
             primaryMode = primaryMode
         )
@@ -697,6 +493,7 @@ class LocationTrackingService : Service(), SensorEventListener {
         )
 
         serviceScope.launch {
+            // Send Arrival End Pin
             if (endLoc != null) {
                 val (batLevel, isChg) = getBatteryInfo()
                 val endPing = LocationPingEntity(
@@ -707,7 +504,7 @@ class LocationTrackingService : Service(), SensorEventListener {
                     longitude = endLoc.longitude,
                     altitude = if (endLoc.hasAltitude()) endLoc.altitude else null,
                     accuracyMeters = if (endLoc.hasAccuracy()) endLoc.accuracy else null,
-                    speedKmh = smoothedSpeedKmh,
+                    speedKmh = calculatedSpeedKmh,
                     heading = if (endLoc.hasBearing()) endLoc.bearing else null,
                     batteryLevel = batLevel,
                     isCharging = isChg,
@@ -716,7 +513,14 @@ class LocationTrackingService : Service(), SensorEventListener {
                     journeyId = journeyId,
                     pinType = "end"
                 )
-                supabaseManager.dispatchPing(endPing)
+                val result = supabaseManager.dispatchPing(endPing)
+                if (result.isSuccess) {
+                    pingCounter++
+                    _liveState.value = _liveState.value.copy(
+                        totalPingsTransmitted = pingCounter,
+                        lastHttpStatus = "HTTP ${result.getOrNull()} (End Pin)"
+                    )
+                }
             }
 
             supabaseManager.completeJourneyRecord(
@@ -726,13 +530,13 @@ class LocationTrackingService : Service(), SensorEventListener {
                 endLng = endLng,
                 distanceKm = distKm,
                 durationSeconds = durationSec,
-                avgSpeedKmh = avgSpeed,
-                maxSpeedKmh = maxSpeed,
+                avgSpeedKmh = calculatedSpeedKmh,
+                maxSpeedKmh = calculatedSpeedKmh,
                 estimatedCost = estimatedCost,
                 primaryMode = primaryMode
             )
         }
-        Log.i(TAG, "Completed journey $journeyId: ${distKm}km, ${durationSec}s, avg ${avgSpeed}km/h")
+        Log.i(TAG, "Completed journey $journeyId: ${distKm}km, ${durationSec}s, speed: ${calculatedSpeedKmh}km/h")
     }
 
     private fun calculateEstimatedCost(distKm: Float, mode: String): Float {
@@ -771,9 +575,9 @@ class LocationTrackingService : Service(), SensorEventListener {
             val mm = (sec % 3600) / 60
             val ss = sec % 60
             val timeFmt = if (hh > 0) String.format(Locale.US, "%02d:%02d:%02d", hh, mm, ss) else String.format(Locale.US, "%02d:%02d", mm, ss)
-            "🚀 Active Journey • $timeFmt"
+            "🚀 Journey In Progress • $timeFmt"
         } else {
-            "🛰️ Apex LifeOS Kinetic Tracker Active"
+            "🛰️ Apex LifeOS Tracker Ready"
         }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
@@ -794,7 +598,7 @@ class LocationTrackingService : Service(), SensorEventListener {
                 "Apex Location Telemetry",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Continuous kinetic sensor location tracking for Apex LifeOS"
+                description = "Timeline location tracking for Apex LifeOS"
                 setShowBadge(false)
             }
             notificationManager.createNotificationChannel(channel)
