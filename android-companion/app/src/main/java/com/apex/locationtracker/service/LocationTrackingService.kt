@@ -104,6 +104,8 @@ class LocationTrackingService : Service() {
     private var journeyStartTimeMs: Long = 0L
     private var journeyStartIsoTime: String = ""
     private var journeyStartLocation: Location? = null
+    private var journeyDistanceMeters: Float = 0.0f
+    private var lastDispatchedPingTimestampMs: Long = 0L
     private var journeyTickerJob: Job? = null
 
     companion object {
@@ -215,22 +217,29 @@ class LocationTrackingService : Service() {
 
     /**
      * Process location update from GPS provider:
-     * - In-between pings along the way are COMPLETELY DROPPED (no telemetry pings sent during travel).
-     * - Only Start Pin is sent on start, and End Pin is sent on end.
-     * - Live speed is calculated strictly as straight-line distance from Start Point divided by elapsed time.
+     * - Dispatches intermediate route pings every 10 seconds during an active journey (pin_type = "in_travel").
+     * - Speed is calculated strictly from route distance and elapsed time (no kinetic speed sensors).
      */
     private fun processLocationUpdate(location: Location) {
+        val prevLoc = lastRecordedLocation
         lastRecordedLocation = location
+        val now = SystemClock.elapsedRealtime()
         val (batteryLevel, isCharging) = getBatteryInfo()
         val isoTimestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }.format(Date(location.time))
 
-        if (isJourneyActive && journeyStartLocation != null) {
-            val startLoc = journeyStartLocation!!
-            val distMeters = startLoc.distanceTo(location)
-            val distKm = distMeters / 1000.0f
-            val elapsedSec = maxOf(1L, (SystemClock.elapsedRealtime() - journeyStartTimeMs) / 1000L)
+        if (isJourneyActive) {
+            // Accumulate route distance along sequential GPS updates
+            if (prevLoc != null) {
+                val deltaMeters = prevLoc.distanceTo(location)
+                if (deltaMeters in 1.0f..600.0f) {
+                    journeyDistanceMeters += deltaMeters
+                }
+            }
+
+            val distKm = journeyDistanceMeters / 1000.0f
+            val elapsedSec = maxOf(1L, (now - journeyStartTimeMs) / 1000L)
             val hours = elapsedSec / 3600.0f
             val calculatedSpeedKmh = if (hours > 0) distKm / hours else 0.0f
             val mode = classifyTransportMode(calculatedSpeedKmh)
@@ -247,11 +256,46 @@ class LocationTrackingService : Service() {
                 journeyDistanceKm = distKm,
                 journeyAvgSpeedKmh = calculatedSpeedKmh,
                 journeyDurationSeconds = elapsedSec,
-                statusMessage = "Journey active: ${String.format(Locale.US, "%.2f", distKm)} km • ${String.format(Locale.US, "%.1f", calculatedSpeedKmh)} km/h"
+                statusMessage = "Tracking Route: ${String.format(Locale.US, "%.2f", distKm)} km • ${String.format(Locale.US, "%.1f", calculatedSpeedKmh)} km/h"
             )
 
             val summaryText = "${String.format(Locale.US, "%.2f", distKm)} km • ${String.format(Locale.US, "%.1f", calculatedSpeedKmh)} km/h ($mode)"
             notificationManager.notify(NOTIFICATION_ID, buildNotification(summaryText))
+
+            // Dispatch 10s intermediate waypoint ping to track the route
+            val timeSinceLastDispatch = now - lastDispatchedPingTimestampMs
+            if (timeSinceLastDispatch >= 10000L) {
+                lastDispatchedPingTimestampMs = now
+                val journeyId = activeJourneyId
+                val inTravelPing = LocationPingEntity(
+                    userId = supabaseManager.userId,
+                    deviceId = supabaseManager.deviceId,
+                    deviceName = supabaseManager.deviceName,
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    altitude = if (location.hasAltitude()) location.altitude else null,
+                    accuracyMeters = if (location.hasAccuracy()) location.accuracy else null,
+                    speedKmh = calculatedSpeedKmh,
+                    heading = if (location.hasBearing()) location.bearing else null,
+                    batteryLevel = batteryLevel,
+                    isCharging = isCharging,
+                    transportMode = mode,
+                    recordedAt = isoTimestamp,
+                    journeyId = journeyId,
+                    pinType = "in_travel"
+                )
+
+                serviceScope.launch {
+                    val result = supabaseManager.dispatchPing(inTravelPing)
+                    if (result.isSuccess) {
+                        pingCounter++
+                        _liveState.value = _liveState.value.copy(
+                            totalPingsTransmitted = pingCounter,
+                            lastHttpStatus = "HTTP ${result.getOrNull()} (10s Waypoint)"
+                        )
+                    }
+                }
+            }
         } else {
             _liveState.value = _liveState.value.copy(
                 latitude = location.latitude,
@@ -318,6 +362,8 @@ class LocationTrackingService : Service() {
         activeJourneyId = journeyId
         journeyStartTimeMs = nowMs
         journeyStartIsoTime = isoTimestamp
+        journeyDistanceMeters = 0.0f
+        lastDispatchedPingTimestampMs = nowMs
 
         val loc = lastRecordedLocation
         journeyStartLocation = loc
@@ -370,10 +416,7 @@ class LocationTrackingService : Service() {
         journeyTickerJob = serviceScope.launch {
             while (isJourneyActive) {
                 val elapsedSec = maxOf(0L, (SystemClock.elapsedRealtime() - journeyStartTimeMs) / 1000L)
-                val start = journeyStartLocation
-                val curr = lastRecordedLocation
-                val distMeters = if (start != null && curr != null) start.distanceTo(curr) else 0.0f
-                val distKm = distMeters / 1000.0f
+                val distKm = journeyDistanceMeters / 1000.0f
                 val hours = elapsedSec / 3600.0f
                 val calcSpeed = if (hours > 0) distKm / hours else 0.0f
 
@@ -410,12 +453,13 @@ class LocationTrackingService : Service() {
         val startLat = startLoc?.latitude ?: 0.0
         val startLng = startLoc?.longitude ?: 0.0
 
-        // Distance strictly calculated between Start Point and End Point
-        val distMeters = if (startLoc != null && endLoc != null) startLoc.distanceTo(endLoc) else 0.0f
+        // Distance: use accumulated route distance, or straight-line distance if stationary/single hop
+        val straightDistMeters = if (startLoc != null && endLoc != null) startLoc.distanceTo(endLoc) else 0.0f
+        val distMeters = if (journeyDistanceMeters >= straightDistMeters * 0.8f) journeyDistanceMeters else straightDistMeters
         val distKm = distMeters / 1000.0f
 
         // Speed calculated strictly based on start point and end point times:
-        // Speed = Distance(start, end) / Delta_T
+        // Speed = Total Route Distance / Delta_T
         val hours = durationSec / 3600.0f
         val calculatedSpeedKmh = if (hours > 0) distKm / hours else 0.0f
         val primaryMode = classifyTransportMode(calculatedSpeedKmh)
@@ -492,7 +536,7 @@ class LocationTrackingService : Service() {
                 primaryMode = primaryMode
             )
         }
-        Log.i(TAG, "Completed journey $journeyId: ${distKm}km, ${durationSec}s, speed based on start/end: ${calculatedSpeedKmh}km/h")
+        Log.i(TAG, "Completed journey $journeyId: ${distKm}km, ${durationSec}s, speed: ${calculatedSpeedKmh}km/h")
     }
 
     private fun calculateEstimatedCost(distKm: Float, mode: String): Float {

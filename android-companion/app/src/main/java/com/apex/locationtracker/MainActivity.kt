@@ -266,7 +266,7 @@ fun TrackerAppScreen(
                             fontSize = 13.sp
                         )
                         Text(
-                            text = "Start Pin sent on departure. End Pin sent on arrival. Speed is computed strictly from ΔT between start and end.",
+                            text = "Start Pin sent on departure. 10s intermediate waypoints track the route. End Pin sent on arrival. Speed is computed from distance / ΔT.",
                             color = Color(0xFF94A3B8),
                             fontSize = 11.sp
                         )

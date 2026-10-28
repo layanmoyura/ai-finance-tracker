@@ -153,4 +153,71 @@ describe('Location & Mobility Calculations', () => {
     expect(metrics.estimatedCost).toBeGreaterThan(0);
     expect(metrics.primaryTransportMode).toBe('vehicle');
   });
+
+  it('should compute journey telemetry with 10s intermediate waypoints tracking the route', () => {
+    const journeyPings: DeviceLocationPing[] = [
+      {
+        id: 'start-1',
+        user_id: 'usr-1',
+        device_id: 'dev-1',
+        journey_id: 'jrn-456',
+        pin_type: 'start',
+        latitude: 6.9271,
+        longitude: 79.8612,
+        speed_kmh: 0,
+        transport_mode: 'stationary',
+        recorded_at: '2026-10-25T10:00:00.000Z',
+      },
+      {
+        id: 'wp-10s-1',
+        user_id: 'usr-1',
+        device_id: 'dev-1',
+        journey_id: 'jrn-456',
+        pin_type: 'in_travel',
+        latitude: 6.9100,
+        longitude: 79.8580,
+        speed_kmh: 36,
+        transport_mode: 'vehicle',
+        recorded_at: '2026-10-25T10:00:10.000Z',
+      },
+      {
+        id: 'wp-10s-2',
+        user_id: 'usr-1',
+        device_id: 'dev-1',
+        journey_id: 'jrn-456',
+        pin_type: 'in_travel',
+        latitude: 6.8900,
+        longitude: 79.8560,
+        speed_kmh: 38,
+        transport_mode: 'vehicle',
+        recorded_at: '2026-10-25T10:00:20.000Z',
+      },
+      {
+        id: 'end-1',
+        user_id: 'usr-1',
+        device_id: 'dev-1',
+        journey_id: 'jrn-456',
+        pin_type: 'end',
+        latitude: 6.8700,
+        longitude: 79.8600,
+        speed_kmh: 37,
+        transport_mode: 'vehicle',
+        recorded_at: '2026-10-25T10:00:30.000Z',
+      },
+    ];
+
+    const metrics = computeJourneyTelemetry(journeyPings);
+    expect(metrics).not.toBeNull();
+    if (!metrics) return;
+
+    expect(metrics.journeyId).toBe('jrn-456');
+    expect(metrics.startPing?.id).toBe('start-1');
+    expect(metrics.endPing?.id).toBe('end-1');
+    expect(metrics.inTravelPings.length).toBe(2);
+    expect(metrics.inTravelPings[0].id).toBe('wp-10s-1');
+    expect(metrics.inTravelPings[1].id).toBe('wp-10s-2');
+    expect(metrics.travelTimeSeconds).toBe(30);
+    expect(metrics.totalDistanceKm).toBeGreaterThan(6);
+    expect(metrics.estimatedCost).toBeGreaterThan(0);
+  });
 });

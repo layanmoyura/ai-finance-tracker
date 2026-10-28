@@ -300,11 +300,12 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
       }).addTo(routeGroup);
     }
 
-    // 1. Identify Start and End Pins
+    // 1. Identify Start, In-Travel (10s Waypoints), and End Pins
     const startPing = sortedPings.find((p) => p.pin_type === 'start') || sortedPings[0];
     const endPing =
       [...sortedPings].reverse().find((p) => p.pin_type === 'end') ||
       sortedPings[sortedPings.length - 1];
+    const inTravelPings = sortedPings.filter((p) => p !== startPing && p !== endPing);
 
     // 2. Add Start Point Marker (Emerald Pulsing Beacon)
     const startIcon = L.divIcon({
@@ -330,7 +331,33 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
         </div>`
       );
 
-    // 3. Add End Point Marker (Crimson / Checkered Flag)
+    // 3. Add 10s Intermediate Route Waypoint Markers
+    inTravelPings.forEach((p, idx) => {
+      const waypointIcon = L.divIcon({
+        className: 'intermediate-waypoint-icon',
+        html: `
+          <div class="relative flex items-center justify-center cursor-pointer group">
+            <span class="inline-flex h-3.5 w-3.5 rounded-full bg-sky-400 border-2 border-slate-900 shadow-md ring-2 ring-sky-500/50"></span>
+          </div>
+        `,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7],
+      });
+
+      L.marker([p.latitude, p.longitude], { icon: waypointIcon })
+        .addTo(routeGroup)
+        .bindPopup(
+          `<div class="p-1.5 text-slate-900 font-sans text-xs">
+            <b class="text-sky-700 font-bold">⏱️ 10s Route Waypoint #${idx + 1}</b><br/>
+            Time: <b>${new Date(p.recorded_at).toLocaleTimeString()}</b><br/>
+            ${p.speed_kmh ? `Calculated Speed: <b>${p.speed_kmh.toFixed(1)} km/h</b><br/>` : ''}
+            Coords: ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}<br/>
+            ${p.battery_level ? `Battery: ${Math.round(p.battery_level)}%` : ''}
+          </div>`
+        );
+    });
+
+    // 4. Add End Point Marker (Crimson / Checkered Flag)
     const endIcon = L.divIcon({
       className: 'end-marker-icon',
       html: `
@@ -346,12 +373,25 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
     const endMs = new Date(endPing.recorded_at).getTime();
     const travelDurationSec = Math.max(1, Math.round((endMs - startMs) / 1000));
     const travelDurationMins = Math.max(1, Math.round(travelDurationSec / 60));
-    const tripDistKm = calculateDistanceKm(
-      startPing.latitude,
-      startPing.longitude,
-      endPing.latitude,
-      endPing.longitude
-    );
+
+    let tripDistKm = 0;
+    if (sortedPings.length > 2) {
+      for (let i = 0; i < sortedPings.length - 1; i++) {
+        tripDistKm += calculateDistanceKm(
+          sortedPings[i].latitude,
+          sortedPings[i].longitude,
+          sortedPings[i + 1].latitude,
+          sortedPings[i + 1].longitude
+        );
+      }
+    } else {
+      tripDistKm = calculateDistanceKm(
+        startPing.latitude,
+        startPing.longitude,
+        endPing.latitude,
+        endPing.longitude
+      );
+    }
     const calculatedSpeed = travelDurationSec > 0 ? (tripDistKm / (travelDurationSec / 3600)).toFixed(1) : '0.0';
 
     L.marker([endPing.latitude, endPing.longitude], { icon: endIcon })
@@ -362,7 +402,7 @@ export const SriLankaMobilityMap: React.FC<SriLankaMobilityMapProps> = ({
           Time: <b>${new Date(endPing.recorded_at).toLocaleTimeString()}</b><br/>
           Trip Duration: <b>~${travelDurationMins} mins (${travelDurationSec}s)</b><br/>
           Calculated Speed: <b>${calculatedSpeed} km/h</b><br/>
-          Distance: <b>${tripDistKm.toFixed(2)} km</b><br/>
+          Total Distance: <b>${tripDistKm.toFixed(2)} km</b><br/>
           Lat: ${endPing.latitude.toFixed(4)}, Lng: ${endPing.longitude.toFixed(4)}
         </div>`
       );

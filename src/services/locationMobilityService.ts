@@ -957,14 +957,27 @@ export function computeJourneyTelemetry(pings: DeviceLocationPing[]): JourneyTel
 
   const inTravelPings = sorted.filter((p) => p !== startPing && p !== endPing);
 
-  // Speed is calculated strictly based on start point and end point times
-  // Distance is geodesic straight-line distance between Start Pin and End Pin
-  const totalDistanceKm = calculateDistanceKm(
-    startPing.latitude,
-    startPing.longitude,
-    endPing.latitude,
-    endPing.longitude
-  );
+  // Calculate route distance:
+  // When 10s intermediate route pings exist, sum sequential segment distances to accurately track the route path.
+  // Otherwise, fall back to straight-line distance between Start Pin and End Pin.
+  let totalDistanceKm = 0;
+  if (sorted.length > 2) {
+    for (let i = 0; i < sorted.length - 1; i++) {
+      totalDistanceKm += calculateDistanceKm(
+        sorted[i].latitude,
+        sorted[i].longitude,
+        sorted[i + 1].latitude,
+        sorted[i + 1].longitude
+      );
+    }
+  } else {
+    totalDistanceKm = calculateDistanceKm(
+      startPing.latitude,
+      startPing.longitude,
+      endPing.latitude,
+      endPing.longitude
+    );
+  }
 
   // Travel time calculation (monotonic delta in seconds between start and end)
   const startMs = new Date(startPing.recorded_at).getTime();
