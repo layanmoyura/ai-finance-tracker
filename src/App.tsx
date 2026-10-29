@@ -472,7 +472,7 @@ export function App() {
               onClick={() => setVerifiedNotification(false)}
               className="text-slate-400 hover:text-white font-medium cursor-pointer text-xs"
             >
-              âœ•
+              ✕
             </button>
           </div>
         </div>
@@ -551,7 +551,7 @@ export function App() {
                       <div>
                         <h3 className="text-sm font-bold text-white">Daily Tasks &amp; Bill Reminders</h3>
                         <p className="text-xs text-slate-400">
-                          {pendingTasks.length} active tasks â€¢ {pendingBills.length} upcoming bills
+                          {pendingTasks.length} active tasks • {pendingBills.length} upcoming bills
                         </p>
                       </div>
                     </div>
@@ -631,26 +631,16 @@ export function App() {
               {/* Right Column: Accounts, Subscriptions, and Quick Widgets */}
               <div className="space-y-6">
                 {/* Accounts Manager */}
-                <div>
-                  <div className="flex items-center justify-between mb-3 px-1">
-                    <h3 className="text-sm font-semibold text-slate-300">Bank &amp; Cash Accounts</h3>
-                    <button
-                      onClick={() => setActiveTab('accounts')}
-                      className="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>Manage</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                  <AccountManager
-                    userId={user.id}
-                    userEmail={user.email || undefined}
-                    accounts={accounts}
-                    transactions={transactions}
-                    onAccountUpdated={fetchData}
-                    onTransactionsUpdated={fetchData}
-                  />
-                </div>
+                <AccountManager
+                  userId={user.id}
+                  userEmail={user.email || undefined}
+                  accounts={accounts}
+                  transactions={transactions}
+                  onAccountUpdated={fetchData}
+                  onTransactionsUpdated={fetchData}
+                  compact={true}
+                  onManageTab={() => setActiveTab('accounts')}
+                />
 
                 {/* Subscriptions Glance */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">

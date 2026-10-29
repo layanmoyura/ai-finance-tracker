@@ -18,6 +18,7 @@ import {
   X,
   CheckCircle2,
   Sparkles,
+  ArrowRight,
 } from 'lucide-react';
 import { CurrencyLogo } from './CurrencyLogo';
 import { useForm } from 'react-hook-form';
@@ -33,6 +34,8 @@ interface AccountManagerProps {
   transactions?: Transaction[];
   onAccountUpdated: () => void;
   onTransactionsUpdated?: () => void;
+  compact?: boolean;
+  onManageTab?: () => void;
 }
 
 export const AccountManager: React.FC<AccountManagerProps> = ({
@@ -42,6 +45,8 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
   transactions = [],
   onAccountUpdated,
   onTransactionsUpdated,
+  compact = false,
+  onManageTab,
 }) => {
   const { preferences, formatCurrency, formatDate } = usePreferences();
   const [showAddModal, setShowAddModal] = useState(false);
@@ -235,17 +240,33 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
     }
   };
 
+  const displayedAccounts = compact && accounts.length > 4 ? accounts.slice(0, 4) : accounts;
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
-            <Wallet className="w-5 h-5" />
+    <div className={`bg-slate-900 border border-slate-800 rounded-2xl ${compact ? 'p-4 sm:p-5' : 'p-6'} shadow-xl`}>
+      <div className={compact ? "space-y-3 mb-5" : "flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6"}>
+        <div className="flex items-center justify-between w-full">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 shrink-0">
+              <Wallet className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight truncate">Financial Accounts</h2>
+              <p className="text-xs text-slate-400 truncate">
+                {compact ? 'Ledgers & balances with transaction undo' : 'Manage checking, savings, credit, and cash ledgers with transaction-wise undo'}
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg font-bold text-white tracking-tight">Financial Accounts</h2>
-            <p className="text-xs text-slate-400">Manage checking, savings, credit, and cash ledgers with transaction-wise undo</p>
-          </div>
+
+          {compact && onManageTab && (
+            <button
+              onClick={onManageTab}
+              className="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 cursor-pointer shrink-0 ml-2"
+            >
+              <span>Manage</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -253,7 +274,7 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
             onClick={handleResetAccounts}
             disabled={isResetting}
             title="Reset all account balances to zero and restore default account"
-            className="text-xs font-semibold px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/25 flex items-center gap-1.5 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            className="text-xs font-semibold px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/25 flex items-center gap-1.5 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
             {isResetting ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -265,7 +286,7 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
 
           <button
             onClick={() => setShowAddModal(true)}
-            className="text-xs font-semibold px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center gap-1.5 transition shadow-lg shadow-emerald-500/10 cursor-pointer"
+            className="text-xs font-semibold px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center gap-1.5 transition shadow-lg shadow-emerald-500/10 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>New Account</span>
@@ -274,8 +295,8 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
       </div>
 
       {accounts.length === 0 ? (
-        <div className="text-center py-12 border-2 border-dashed border-slate-800 rounded-xl">
-          <Wallet className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+        <div className="text-center py-10 border-2 border-dashed border-slate-800 rounded-xl">
+          <Wallet className="w-9 h-9 text-slate-600 mx-auto mb-2" />
           <p className="text-sm text-slate-400 font-medium">No accounts found</p>
           <p className="text-xs text-slate-500 mt-1">Create an account to start tracking transactions</p>
           <button
@@ -286,63 +307,69 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {accounts.map((acc) => {
+        <div className={compact ? "grid grid-cols-1 gap-3.5" : "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"}>
+          {displayedAccounts.map((acc) => {
             const accTxs = transactions.filter((t) => t.account_id === acc.id);
             const isCash = /\b(cash|in-hand|wallet|petty)\b/i.test(acc.name);
+            const formattedBalance = new Intl.NumberFormat(undefined, {
+              style: 'currency',
+              currency: acc.currency || preferences.currency || 'USD',
+            }).format(Number(acc.balance));
 
             return (
               <div
                 key={acc.id}
-                className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition group shadow-md"
+                className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition group shadow-md min-w-0 overflow-hidden"
               >
-                <div>
-                  <div className="flex items-start justify-between">
-                    <div>
+                <div className="min-w-0">
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <h3 className="font-semibold text-white text-sm">{acc.name}</h3>
+                        <h3 className="font-semibold text-white text-sm truncate max-w-full" title={acc.name}>
+                          {acc.name}
+                        </h3>
                         {isCash && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1 shrink-0">
                             <Banknote className="w-2.5 h-2.5" />
                             <span>In-Hand Cash</span>
                           </span>
                         )}
                       </div>
-                      <span className="text-xs text-slate-500 uppercase tracking-wider font-mono">
+                      <span className="text-xs text-slate-500 uppercase tracking-wider font-mono block mt-0.5">
                         {acc.currency}
                       </span>
                     </div>
                     <button
                       onClick={() => handleDeleteAccount(acc.id)}
                       title="Delete account"
-                      className="text-slate-600 hover:text-rose-400 transition p-1 cursor-pointer"
+                      className="text-slate-600 hover:text-rose-400 transition p-1 cursor-pointer shrink-0"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
 
-                  <div className="mt-4">
+                  <div className="mt-3.5 min-w-0">
                     <span className="text-xs text-slate-500 block">Current Balance</span>
-                    <span className="text-xl font-bold text-white tracking-tight">
-                      {new Intl.NumberFormat(undefined, {
-                        style: 'currency',
-                        currency: acc.currency || preferences.currency || 'USD',
-                      }).format(Number(acc.balance))}
+                    <span
+                      className="text-lg sm:text-xl font-bold text-white tracking-tight tabular-nums truncate block"
+                      title={formattedBalance}
+                    >
+                      {formattedBalance}
                     </span>
                   </div>
                 </div>
 
                 {/* Account Action: View Ledger & Undo Transactions */}
-                <div className="mt-4 pt-3 border-t border-slate-850 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400 font-medium">
+                <div className="mt-4 pt-3 border-t border-slate-850 flex items-center justify-between gap-2 flex-wrap min-w-0">
+                  <span className="text-[11px] text-slate-400 font-medium shrink-0">
                     {accTxs.length} {accTxs.length === 1 ? 'transaction' : 'transactions'}
                   </span>
                   <button
                     onClick={() => handleOpenLedger(acc)}
-                    className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1.5 transition cursor-pointer"
+                    className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1.5 transition cursor-pointer shrink-0"
                     title="View all transactions on this account and undo transaction-wise"
                   >
-                    <RotateCcw className="w-3.5 h-3.5 text-purple-400" />
+                    <RotateCcw className="w-3.5 h-3.5 text-purple-400 shrink-0" />
                     <span>Undo Transactions</span>
                   </button>
                 </div>
@@ -350,6 +377,16 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
             );
           })}
         </div>
+      )}
+
+      {compact && accounts.length > 4 && (
+        <button
+          onClick={onManageTab}
+          className="mt-3 w-full py-2 px-3 text-center text-xs text-emerald-400 hover:text-emerald-300 font-medium bg-slate-950/60 hover:bg-slate-950 border border-dashed border-slate-800 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+        >
+          <span>View {accounts.length - 4} more accounts in Accounts tab</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
       )}
 
       {/* ========================================================================= */}
